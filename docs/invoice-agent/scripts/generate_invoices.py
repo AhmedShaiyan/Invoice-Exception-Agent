@@ -10,6 +10,7 @@ Three different layouts plus one "scanned" image-only PDF keep extraction honest
 Run generate_mock_sap.py first.
 Output: data/invoices/*.pdf and data/invoices/ground_truth.json
 """
+import copy
 import csv
 import io
 import random
@@ -122,12 +123,27 @@ def build_invoice(idx, scenario, ebeln):
         "vendor_gst_reg_no": gst_reg,
         "po_number": po_ref,
         "currency": "SGD",
+        "lines": [{**l, "amount": round2(D(l["quantity"]) * l["unit_price"])} for l in lines],
+        "subtotal": subtotal,
+        "gst_rate": gst_rate,
+        "gst_amount": gst,
+        "total": total_override if total_override is not None else total,
+    }
+
+
+def serialize_invoice(inv):
+    """Decimal -> JSON-safe strings for ground_truth.json. Keeps the Decimal
+    values in `inv` itself untouched, since to_pdf() still needs them for
+    rendering/arithmetic after this is called."""
+    return {
+        **{k: v for k, v in inv.items() if k not in
+           ("lines", "subtotal", "gst_rate", "gst_amount", "total")},
         "lines": [{**l, "unit_price": money_str(l["unit_price"]),
-                   "amount": money_str(D(l["quantity"]) * l["unit_price"])} for l in lines],
-        "subtotal": money_str(subtotal),
-        "gst_rate": str(gst_rate),
-        "gst_amount": money_str(gst),
-        "total": money_str(total_override if total_override is not None else total),
+                   "amount": money_str(l["amount"])} for l in inv["lines"]],
+        "subtotal": money_str(inv["subtotal"]),
+        "gst_rate": str(inv["gst_rate"]),
+        "gst_amount": money_str(inv["gst_amount"]),
+        "total": money_str(inv["total"]),
     }
 
 
@@ -243,13 +259,13 @@ def render_minimal(c, inv):
     y -= 6 * mm
     c.drawString(15 * mm, y, "-" * 92)
     c.drawString(15 * mm, y - 6 * mm, f"{'Sub-total':<64}{money(inv['subtotal']):>12}")
-    c.drawString(15 * mm, y - 11 * mm, f"{'GST @ ' + format(inv['gst_rate'] * 100, 'g') + '%':<64}{money(inv['gst_amount']):>12}")
+    c.drawString(15 * mm, y - 11 * mm, f"{'GST @ ' + str((inv['gst_rate'] * 100).normalize()) + '%':<64}{money(inv['gst_amount']):>12}")
     c.drawString(15 * mm, y - 16 * mm, f"{'AMOUNT DUE (SGD)':<64}{money(inv['total']):>12}")
 
 
 def totals_block(c, inv, y, w, font="Helvetica"):
     rows = [("Subtotal", inv["subtotal"]),
-            (f"GST {inv['gst_rate'] * 100:g}%", inv["gst_amount"]),
+            (f"GST {(inv['gst_rate'] * 100).normalize()}%", inv["gst_amount"]),
             ("Total Payable (SGD)", inv["total"])]
     for i, (k, v) in enumerate(rows):
         c.setFont(f"{font}-Bold" if i == 2 else ("Times-Roman" if font == "Times" else font), 10)
@@ -275,8 +291,18 @@ def to_pdf(inv, layout):
 
 
 def make_scanned(pdf_bytes):
-    """Rasterise, tilt slightly and blur, so there is no text layer to copy."""
-    img = convert_from_bytes(pdf_bytes, dpi=120)[0].convert("L")
+    """Rasterise, tilt slightly and blur, so there is no text layer to copy.
+
+    Uses pypdfium2 (pure pip install, bundles its own PDFium binary) rather
+    than pdf2image, which shells out to the poppler `pdftoppm`/`pdfinfo`
+    system binaries. Those aren't pip-installable and aren't present on a
+    fresh machine or most deploy targets by default -- the previous
+    implementation crashed here on a clean checkout. See docs/decisions_log.md.
+    """
+    pdf = pdfium.PdfDocument(pdf_bytes)
+    bitmap = pdf[0].render(scale=120 / 72)   # 120 DPI (PDFium's native unit is 72 DPI = 1x)
+    img = bitmap.to_pil().convert("L")
+    pdf.close()
     img = img.rotate(-1.2, expand=True, fillcolor=255).filter(ImageFilter.GaussianBlur(0.5))
     arr = np.asarray(img, dtype=np.int16)
     arr = arr - 18 + np.random.default_rng(7).normal(0, 9, arr.shape)   # grey paper + grain
@@ -289,18 +315,23 @@ def make_scanned(pdf_bytes):
 # --------------------------------------------------------------- main
 if __name__ == "__main__":
     truth, first = [], None
+    ground_truth_path = OUT / "ground_truth.json"
     for idx, (scenario, ebeln, layout, codes) in enumerate(SCENARIOS, start=1):
         inv = build_invoice(idx, scenario, ebeln)
         if scenario == "duplicate":
-            inv = json.loads(json.dumps(first))     # same vendor + invoice no. resubmitted
+            inv = copy.deepcopy(first)              # same vendor + invoice no. resubmitted
         if idx == 1:
             first = inv
         fname = f"INV_{idx:02d}_{inv['invoice_number']}.pdf"
-        (OUT / fname).write_bytes(to_pdf(inv, layout))
+        (OUT / fname).write_bytes(to_pdf(inv, layout))    # the step that can fail (e.g. rasteriser)
+
+        # Only record truth + flush to disk *after* the PDF write succeeds, so a crash
+        # partway through leaves ground_truth.json describing exactly the PDFs that exist,
+        # never a partial/corrupt file and never an entry for a PDF that wasn't written.
         truth.append({"file": fname, "scenario": scenario, "layout": layout,
                       "expected_decision": "AUTO_APPROVE" if not codes else "EXCEPTION",
-                      "expected_exceptions": codes, "fields": inv})
+                      "expected_exceptions": codes, "fields": serialize_invoice(inv)})
+        atomic_write_json(ground_truth_path, truth)
         print(f"  {fname:<36} {layout:<8} {scenario}")
 
-    (OUT / "ground_truth.json").write_text(json.dumps(truth, indent=2))
     print(f"\n{len(truth)} invoices + ground_truth.json written to {OUT}")

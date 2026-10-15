@@ -19,14 +19,14 @@
           "description": "A4 Copier Paper (500 sheets)",
           "quantity": 199,
           "unit": "BOX",
-          "unit_price": 6.8,
-          "amount": 1353.2
+          "unit_price": "6.80",
+          "amount": "1353.20"
         }
       ],
-      "subtotal": 1353.2,
-      "gst_rate": 0.09,
-      "gst_amount": 121.79,
-      "total": 1474.99
+      "subtotal": "1353.20",
+      "gst_rate": "0.09",
+      "gst_amount": "121.79",
+      "total": "1474.99"
     }
   },
   {
@@ -49,8 +49,8 @@
           "description": "Office Cleaning - Monthly",
           "quantity": 3,
           "unit": "MON",
-          "unit_price": 3200.0,
-          "amount": 9600.0
+          "unit_price": "3200.00",
+          "amount": "9600.00"
         },
         {
           "po_item": "00020",
@@ -58,14 +58,14 @@
           "description": "Pest Control Treatment",
           "quantity": 3,
           "unit": "EA",
-          "unit_price": 480.0,
-          "amount": 1440.0
+          "unit_price": "480.00",
+          "amount": "1440.00"
         }
       ],
-      "subtotal": 11040.0,
-      "gst_rate": 0.09,
-      "gst_amount": 993.6,
-      "total": 12033.6
+      "subtotal": "11040.00",
+      "gst_rate": "0.09",
+      "gst_amount": "993.60",
+      "total": "12033.60"
     }
   },
   {
@@ -88,8 +88,8 @@
           "description": "Customs Clearance Fee",
           "quantity": 1,
           "unit": "EA",
-          "unit_price": 160.0,
-          "amount": 160.0
+          "unit_price": "160.00",
+          "amount": "160.00"
         },
         {
           "po_item": "00020",
@@ -97,14 +97,14 @@
           "description": "Inbound Freight - Pallet",
           "quantity": 8,
           "unit": "PAL",
-          "unit_price": 85.0,
-          "amount": 680.0
+          "unit_price": "85.00",
+          "amount": "680.00"
         }
       ],
-      "subtotal": 840.0,
-      "gst_rate": 0.09,
-      "gst_amount": 75.6,
-      "total": 915.6
+      "subtotal": "840.00",
+      "gst_rate": "0.09",
+      "gst_amount": "75.60",
+      "total": "915.60"
     }
   },
   {
@@ -127,14 +127,14 @@
           "description": "ESD-Safe Wipes (case)",
           "quantity": 10,
           "unit": "CS",
-          "unit_price": 210.0,
-          "amount": 2100.0
+          "unit_price": "210.00",
+          "amount": "2100.00"
         }
       ],
-      "subtotal": 2100.0,
-      "gst_rate": 0.09,
-      "gst_amount": 189.0,
-      "total": 2289.0
+      "subtotal": "2100.00",
+      "gst_rate": "0.09",
+      "gst_amount": "189.00",
+      "total": "2289.00"
     }
   },
   {
@@ -157,14 +157,14 @@
           "description": "48-Port Network Switch",
           "quantity": 3,
           "unit": "EA",
-          "unit_price": 2150.0,
-          "amount": 6450.0
+          "unit_price": "2150.00",
+          "amount": "6450.00"
         }
       ],
-      "subtotal": 6450.0,
-      "gst_rate": 0.09,
-      "gst_amount": 580.5,
-      "total": 7030.5
+      "subtotal": "6450.00",
+      "gst_rate": "0.09",
+      "gst_amount": "580.50",
+      "total": "7030.50"
     }
   },
   {
@@ -187,8 +187,8 @@
           "description": "Ergonomic Office Chair",
           "quantity": 8,
           "unit": "EA",
-          "unit_price": 290.16,
-          "amount": 2321.28
+          "unit_price": "290.16",
+          "amount": "2321.28"
         },
         {
           "po_item": "00020",
@@ -196,8 +196,8 @@
           "description": "A4 Copier Paper (500 sheets)",
           "quantity": 186,
           "unit": "BOX",
-          "unit_price": 6.8,
-          "amount": 1264.8
+          "unit_price": "6.80",
+          "amount": "1264.80"
         },
         {
           "po_item": "00030",
@@ -205,14 +205,14 @@
           "description": "Ballpoint Pens, Blue (pack of 50)",
           "quantity": 25,
           "unit": "PAK",
-          "unit_price": 18.5,
-          "amount": 462.5
+          "unit_price": "18.50",
+          "amount": "462.50"
         }
       ],
-      "subtotal": 4048.58,
-      "gst_rate": 0.09,
-      "gst_amount": 364.37,
-      "total": 4412.95
+      "subtotal": "4048.58",
+      "gst_rate": "0.09",
+      "gst_amount": "364.37",
+      "total": "4412.95"
     }
   },
   {
@@ -237,14 +237,14 @@
           "description": "NVMe SSD 3.84TB",
           "quantity": 7,
           "unit": "EA",
-          "unit_price": 885.6,
-          "amount": 6199.2
+          "unit_price": "885.60",
+          "amount": "6199.20"
         }
       ],
-      "subtotal": 6199.2,
-      "gst_rate": 0.09,
-      "gst_amount": 557.93,
-      "total": 6757.13
+      "subtotal": "6199.20",
+      "gst_rate": "0.09",
+      "gst_amount": "557.93",
+      "total": "6757.13"
     }
   },
   {
@@ -269,8 +269,8 @@
           "description": "Event Banner 2m x 1m",
           "quantity": 11,
           "unit": "EA",
-          "unit_price": 129.6,
-          "amount": 1425.6
+          "unit_price": "129.60",
+          "amount": "1425.60"
         },
         {
           "po_item": "00020",
@@ -278,14 +278,14 @@
           "description": "Product Datasheet Printing (1000 pcs)",
           "quantity": 3,
           "unit": "LOT",
-          "unit_price": 640.0,
-          "amount": 1920.0
+          "unit_price": "640.00",
+          "amount": "1920.00"
         }
       ],
-      "subtotal": 3345.6,
-      "gst_rate": 0.09,
-      "gst_amount": 301.1,
-      "total": 3646.7
+      "subtotal": "3345.60",
+      "gst_rate": "0.09",
+      "gst_amount": "301.10",
+      "total": "3646.70"
     }
   },
   {
@@ -310,8 +310,8 @@
           "description": "Event Banner 2m x 1m",
           "quantity": 12,
           "unit": "EA",
-          "unit_price": 120.0,
-          "amount": 1440.0
+          "unit_price": "120.00",
+          "amount": "1440.00"
         },
         {
           "po_item": "00020",
@@ -319,14 +319,14 @@
           "description": "Product Datasheet Printing (1000 pcs)",
           "quantity": 2,
           "unit": "LOT",
-          "unit_price": 640.0,
-          "amount": 1280.0
+          "unit_price": "640.00",
+          "amount": "1280.00"
         }
       ],
-      "subtotal": 2720.0,
-      "gst_rate": 0.09,
-      "gst_amount": 244.8,
-      "total": 2964.8
+      "subtotal": "2720.00",
+      "gst_rate": "0.09",
+      "gst_amount": "244.80",
+      "total": "2964.80"
     }
   },
   {
@@ -351,14 +351,14 @@
           "description": "Customs Clearance Fee",
           "quantity": 10,
           "unit": "EA",
-          "unit_price": 160.0,
-          "amount": 1600.0
+          "unit_price": "160.00",
+          "amount": "1600.00"
         }
       ],
-      "subtotal": 1600.0,
-      "gst_rate": 0.09,
-      "gst_amount": 144.0,
-      "total": 1744.0
+      "subtotal": "1600.00",
+      "gst_rate": "0.09",
+      "gst_amount": "144.00",
+      "total": "1744.00"
     }
   },
   {
@@ -383,8 +383,8 @@
           "description": "Wireless Access Point",
           "quantity": 4,
           "unit": "EA",
-          "unit_price": 395.0,
-          "amount": 1580.0
+          "unit_price": "395.00",
+          "amount": "1580.00"
         },
         {
           "po_item": "00020",
@@ -392,14 +392,14 @@
           "description": "Cat6 Patch Cable 3m",
           "quantity": 12,
           "unit": "EA",
-          "unit_price": 4.2,
-          "amount": 50.4
+          "unit_price": "4.20",
+          "amount": "50.40"
         }
       ],
-      "subtotal": 1630.4,
-      "gst_rate": 0.09,
-      "gst_amount": 146.74,
-      "total": 1777.14
+      "subtotal": "1630.40",
+      "gst_rate": "0.09",
+      "gst_amount": "146.74",
+      "total": "1777.14"
     }
   },
   {
@@ -424,8 +424,8 @@
           "description": "Wireless Access Point",
           "quantity": 10,
           "unit": "EA",
-          "unit_price": 395.0,
-          "amount": 3950.0
+          "unit_price": "395.00",
+          "amount": "3950.00"
         },
         {
           "po_item": "00020",
@@ -433,8 +433,8 @@
           "description": "Cat6 Patch Cable 3m",
           "quantity": 3,
           "unit": "EA",
-          "unit_price": 4.2,
-          "amount": 12.6
+          "unit_price": "4.20",
+          "amount": "12.60"
         },
         {
           "po_item": "00030",
@@ -442,14 +442,14 @@
           "description": "48-Port Network Switch",
           "quantity": 1,
           "unit": "EA",
-          "unit_price": 2150.0,
-          "amount": 2150.0
+          "unit_price": "2150.00",
+          "amount": "2150.00"
         }
       ],
-      "subtotal": 6112.6,
-      "gst_rate": 0.08,
-      "gst_amount": 489.01,
-      "total": 6601.61
+      "subtotal": "6112.60",
+      "gst_rate": "0.08",
+      "gst_amount": "489.01",
+      "total": "6601.61"
     }
   },
   {
@@ -474,14 +474,14 @@
           "description": "Managed Backup Storage (per TB-month)",
           "quantity": 58,
           "unit": "TB",
-          "unit_price": 38.0,
-          "amount": 2204.0
+          "unit_price": "38.00",
+          "amount": "2204.00"
         }
       ],
-      "subtotal": 2204.0,
-      "gst_rate": 0.09,
-      "gst_amount": 198.36,
-      "total": 2402.36
+      "subtotal": "2204.00",
+      "gst_rate": "0.09",
+      "gst_amount": "198.36",
+      "total": "2402.36"
     }
   },
   {
@@ -506,14 +506,14 @@
           "description": "Ballpoint Pens, Blue (pack of 50)",
           "quantity": 15,
           "unit": "PAK",
-          "unit_price": 18.5,
-          "amount": 277.5
+          "unit_price": "18.50",
+          "amount": "277.50"
         }
       ],
-      "subtotal": 277.5,
-      "gst_rate": 0.09,
-      "gst_amount": 24.97,
-      "total": 752.47
+      "subtotal": "277.50",
+      "gst_rate": "0.09",
+      "gst_amount": "24.98",
+      "total": "752.48"
     }
   },
   {
@@ -538,14 +538,14 @@
           "description": "A4 Copier Paper (500 sheets)",
           "quantity": 199,
           "unit": "BOX",
-          "unit_price": 6.8,
-          "amount": 1353.2
+          "unit_price": "6.80",
+          "amount": "1353.20"
         }
       ],
-      "subtotal": 1353.2,
-      "gst_rate": 0.09,
-      "gst_amount": 121.79,
-      "total": 1474.99
+      "subtotal": "1353.20",
+      "gst_rate": "0.09",
+      "gst_amount": "121.79",
+      "total": "1474.99"
     }
   },
   {
@@ -568,14 +568,14 @@
           "description": "Office Cleaning - Monthly",
           "quantity": 3,
           "unit": "MON",
-          "unit_price": 3200.0,
-          "amount": 9600.0
+          "unit_price": "3200.00",
+          "amount": "9600.00"
         }
       ],
-      "subtotal": 9600.0,
-      "gst_rate": 0.09,
-      "gst_amount": 864.0,
-      "total": 10464.0
+      "subtotal": "9600.00",
+      "gst_rate": "0.09",
+      "gst_amount": "864.00",
+      "total": "10464.00"
     }
   }
 ]
