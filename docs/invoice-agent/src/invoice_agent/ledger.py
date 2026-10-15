@@ -32,8 +32,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from rapidfuzz import fuzz
-
 from .money import D
 
 
@@ -66,13 +64,29 @@ class Ledger:
             for row in csv.DictReader(f):
                 summary = {"invoice_number": row["xblnr"], "invoice_date": row["bldat"],
                            "lifnr": row["lifnr"]}
-                ledger.by_vendor_invno[(row["lifnr"], cls._norm(row["xblnr"]))] = summary
+                ledger.by_vendor_invno[(row["lifnr"], cls._norm_strict(row["xblnr"]))] = summary
                 ledger.by_vendor[row["lifnr"]].append(summary)
         return ledger
 
     @staticmethod
-    def _norm(invoice_number: str) -> str:
-        return invoice_number.strip().upper().replace(" ", "").replace("/", "-")
+    def _norm_strict(invoice_number: str) -> str:
+        """Whitespace-trim + case-fold only. Two numbers are the same
+        invoice under this norm only if they're the same characters in the
+        same order with the same punctuation -- this is what counts as an
+        *exact* duplicate."""
+        return invoice_number.strip().upper()
+
+    @classmethod
+    def _norm_loose(cls, invoice_number: str) -> str:
+        """Strips all punctuation/whitespace, keeping only alphanumerics.
+        Two numbers that match under this norm but not _norm_strict differ
+        only in separators/formatting (e.g. "LIO-2610-1037" vs
+        "LIO/2610/1037" vs "LIO26101037") -- almost certainly the same
+        invoice re-keyed differently, not a coincidence. This is treated as
+        a near-duplicate, not an exact one, because the *document itself*
+        isn't byte-identical to what's on file -- a human should glance at
+        it, not have it silently auto-rejected as the exact same submission."""
+        return "".join(ch for ch in cls._norm_strict(invoice_number) if ch.isalnum())
 
     def receive_goods(self, ebeln: str, ebelp: str, qty) -> None:
         """qty may be negative, for movement type 122 (return delivery)."""
@@ -83,21 +97,37 @@ class Ledger:
         return self.gr_qty[key] - self.invoiced_qty[key]
 
     def find_exact_duplicate(self, lifnr: str, invoice_number: str):
-        return self.by_vendor_invno.get((lifnr, self._norm(invoice_number)))
+        return self.by_vendor_invno.get((lifnr, self._norm_strict(invoice_number)))
 
-    def find_near_duplicates(self, lifnr: str, invoice_number: str, score_cutoff: float = 82.0):
-        """Fuzzy match against this vendor's existing invoice numbers. Returns
-        [(score, summary), ...] for anything above score_cutoff that is NOT an
-        exact normalized match (exact matches are find_exact_duplicate's job)."""
-        norm = self._norm(invoice_number)
+    def find_near_duplicates(self, lifnr: str, invoice_number: str):
+        """Returns [(score, summary), ...] for this vendor's existing
+        invoice numbers that are the same invoice, re-keyed with different
+        punctuation/whitespace (excluding exact matches -- that's
+        find_exact_duplicate's job): same characters once all
+        punctuation/whitespace is stripped (_norm_loose).
+
+        Deliberately NOT a generic fuzzy-ratio match on the raw string. This
+        project's invoice numbers are VENDOR-YYMM-NNNN, so any two
+        *different*, unrelated invoices from the same vendor in the same
+        month already share an 8-character prefix -- measured real,
+        unrelated pairs scoring as "similar" as 96 on plain edit-distance
+        (e.g. "MER-2609-1924" vs "MER-2609-924", two genuinely different
+        invoices). No cutoff threshold reliably separates that noise from a
+        genuine near-duplicate for IDs built this way, and every actual
+        near-duplicate in this project's own dataset is already punctuation-
+        only and caught by the loose-normalisation check below -- so a
+        generic fuzzy fallback here was pure false-positive risk with no
+        offsetting benefit, not a feature worth keeping at a "high enough"
+        threshold.
+        """
+        strict = self._norm_strict(invoice_number)
+        loose = self._norm_loose(invoice_number)
         out = []
         for summary in self.by_vendor.get(lifnr, []):
-            other_norm = self._norm(summary["invoice_number"])
-            if other_norm == norm:
+            if self._norm_strict(summary["invoice_number"]) == strict:
                 continue
-            score = fuzz.ratio(norm, other_norm)
-            if score >= score_cutoff:
-                out.append((score, summary))
+            if self._norm_loose(summary["invoice_number"]) == loose:
+                out.append((100.0, summary))
         return sorted(out, key=lambda t: -t[0])
 
     def prior_invoices_from_vendor(self, lifnr: str):
@@ -116,7 +146,7 @@ class Ledger:
         if not posted:
             return
         summary = {"invoice_number": invoice_number, "invoice_date": invoice_date, "lifnr": lifnr}
-        self.by_vendor_invno[(lifnr, self._norm(invoice_number))] = summary
+        self.by_vendor_invno[(lifnr, self._norm_strict(invoice_number))] = summary
         self.by_vendor[lifnr].append(summary)
         for ln in lines:
             if ln.get("po_item") and ln.get("po_number"):

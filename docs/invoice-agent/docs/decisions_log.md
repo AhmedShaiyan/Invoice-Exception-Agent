@@ -176,3 +176,86 @@ rendering and reading the PDF, not just by the code looking plausible.
 Fixed with real word-wrapping against the sidebar's pixel width
 (`stringWidth`), not a wider character cap, since any flat cap breaks again
 for a long enough name.
+
+## Section 2 — Deterministic validation engine
+
+**100% match on `ground_truth.json` (217/217), but it took six real bugs to
+get there, every one found by actually running the engine against the
+dataset rather than by code review.** In order found:
+
+1. **Tolerance-boundary mislabeling.** `gen_tolerance_boundary` paired
+   factor `1.0100` (exactly +1.00%) with `should_pass=False`, contradicting
+   its own docstring ("+1.00% must pass") and the validator's documented
+   inclusive `<=` comparison. A ground-truth authoring bug, caught before
+   it could masquerade as a validator bug. Fixed to four clean boundary
+   points (0%, +1.00%, +1.01%, -1.01%) with the semantics made explicit.
+
+2. **`make_line`'s default quantity was the *ordered* PO quantity, not what
+   was actually received.** ~10% of goods lines are genuinely under-received
+   by design (see generate_mock_sap.py's partial-GR logic); defaulting to
+   `menge` meant roughly that fraction of "clean" invoices across almost
+   every scenario type were silently over-billing relative to GR, a latent
+   mislabeling that a stricter validator would have correctly caught as
+   QTY_EXCEEDS_GR. Fixed to default to `ledger.remaining_qty(...)` for
+   goods lines (matching the original v1 design intent: "bill what was
+   received"), and separately to the ordered/contracted qty for service
+   lines, which have no GR concept at all.
+
+3. **Near-duplicate detection was both too strict and too loose at once, in
+   different spots.** The old `_norm()` already silently collapsed slash-
+   and whitespace-variant reformats into *exact* matches (so two of the
+   three `near_duplicate` reformats were actually hitting DUPLICATE_INVOICE,
+   not NEAR_DUPLICATE_INVOICE) while the generic fuzzy-ratio fallback (cutoff
+   82, later 95) kept false-positiving on genuinely unrelated invoices: this
+   project's numbering scheme (`VENDOR-YYMM-NNNN`) means any two *different*
+   invoices from the same vendor in the same month already share an
+   8-character prefix, and real measured pairs scored as "similar" as 96 on
+   plain edit distance. No threshold reliably separates that structural
+   coincidence from a genuine near-duplicate. Replaced the whole thing with
+   two-tier normalisation (`_norm_strict` = trim+casefold only, for exact
+   matches; `_norm_loose` = strip all punctuation, for near-duplicates) and
+   dropped the generic fuzzy fallback entirely -- it was pure false-positive
+   risk with no scenario in this dataset that actually needed it, since
+   every real near-duplicate here is a punctuation/whitespace reformat,
+   caught deterministically by `_norm_loose`. See
+   `docs/design_decisions.md`.
+
+4. **A test I wrote was itself wrong, not the validator.** My first
+   tolerance-boundary unit test built a "+1%" price via
+   `(true_price * 1.01).quantize(cents)` -- but $6.80 * 1.01 = $6.868,
+   which isn't representable to the cent, so quantizing it landed on $6.87
+   (an actual +1.03% variance) while the test asserted it should pass as
+   "exactly +1%". The validator was correctly rejecting it; the test's
+   measurement was wrong. Fixed by testing the validator's exact-Decimal
+   comparison logic directly (unquantized boundary values) rather than
+   conflating it with the separate, already-handled question of whether a
+   2dp invoice price can land exactly on a percentage boundary.
+
+5. **PEINH>1 items: the +/-1% price tolerance is mathematically incoherent
+   at the per-unit level once the true price drops below a cent.** $3.80
+   per 100 units = $0.038/unit true price; an invoice can only display 2dp,
+   so it necessarily shows $0.04 -- a "5% variance" from unavoidable
+   rounding, not a pricing error, and 1% of $0.038 (0.00038) is smaller than
+   the rounding granularity that produced the number in the first place. No
+   per-unit percentage tolerance can ever pass a correctly-priced sub-cent
+   item under these constraints. Fixed with a tolerance floor of half a
+   cent (the maximum possible 2dp rounding error) -- inactive for anything
+   priced high enough for 1% to already exceed it, so normal items are
+   unaffected.
+
+6. **A line whose PO didn't exist was also getting flagged "not on the
+   PO"**, double-counting the same underlying problem as two different
+   exception codes (PO_NOT_FOUND *and* LINE_NOT_ON_PO) on `no_po`-scenario
+   invoices. Fixed by skipping line-level matching entirely for lines whose
+   referenced PO was already flagged invalid at the invoice level.
+
+Also fixed along the way (scenario-generator bugs, not validator bugs):
+`finalize()` defaulted every invoice to "SGD" regardless of the referenced
+PO's actual currency, so any generic scenario that happened to draw a line
+from the one USD-denominated vendor was spuriously tripping
+CURRENCY_MISMATCH on what was meant to be a clean invoice -- now defaults
+to the referenced PO's real currency. `gst_rounding_difference`'s price
+nudge (up to 5 cents, to find a rounding divergence) wasn't itself bounded
+by the +/-1% price tolerance, so it could overshoot into a real
+PRICE_VARIANCE on cheap items -- now capped per-item at what the tolerance
+actually allows.

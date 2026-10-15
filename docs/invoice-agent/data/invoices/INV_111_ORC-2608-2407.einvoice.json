@@ -1,0 +1,83 @@
+{
+  "CustomizationID": "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0",
+  "ProfileID": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+  "ID": "ORC-2608-2407",
+  "IssueDate": "2026-08-24",
+  "InvoiceTypeCode": "380",
+  "DocumentCurrencyCode": "SGD",
+  "OrderReference": {
+    "ID": "4500012094"
+  },
+  "AccountingSupplierParty": {
+    "Party": {
+      "PartyName": "Orchid Networks Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "202034567N",
+        "TaxScheme": "GST"
+      },
+      "PartyLegalEntity": {
+        "RegistrationName": "Orchid Networks Pte Ltd",
+        "CompanyID": "100004"
+      }
+    }
+  },
+  "AccountingCustomerParty": {
+    "Party": {
+      "PartyName": "Northwind Semiconductor (Singapore) Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201598765F",
+        "TaxScheme": "GST"
+      }
+    }
+  },
+  "TaxTotal": [
+    {
+      "TaxAmount": "2270.70",
+      "TaxSubtotal": [
+        {
+          "TaxableAmount": "25230.00",
+          "TaxAmount": "2270.70",
+          "TaxCategory": {
+            "ID": "S",
+            "Percent": "9",
+            "TaxScheme": "GST"
+          }
+        }
+      ]
+    }
+  ],
+  "LegalMonetaryTotal": {
+    "LineExtensionAmount": "25230.00",
+    "TaxExclusiveAmount": "25230.00",
+    "TaxInclusiveAmount": "27500.70",
+    "PayableAmount": "27500.70"
+  },
+  "InvoiceLine": [
+    {
+      "ID": "00030",
+      "InvoicedQuantity": 11,
+      "unitCode": "EA",
+      "LineExtensionAmount": "23650.00",
+      "Item": {
+        "Description": "48-Port Network Switch",
+        "SellersItemIdentification": "MAT-4001"
+      },
+      "Price": {
+        "PriceAmount": "2150.00"
+      }
+    },
+    {
+      "ID": "00040",
+      "InvoicedQuantity": 4,
+      "unitCode": "EA",
+      "LineExtensionAmount": "1580.00",
+      "Item": {
+        "Description": "Wireless Access Point",
+        "SellersItemIdentification": "MAT-4003"
+      },
+      "Price": {
+        "PriceAmount": "395.00"
+      }
+    }
+  ]
+}

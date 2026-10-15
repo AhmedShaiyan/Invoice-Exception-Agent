@@ -1,0 +1,70 @@
+{
+  "CustomizationID": "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0",
+  "ProfileID": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+  "ID": "STR-2609-2253",
+  "IssueDate": "2026-09-27",
+  "InvoiceTypeCode": "380",
+  "DocumentCurrencyCode": "SGD",
+  "OrderReference": {
+    "ID": "4500012129"
+  },
+  "AccountingSupplierParty": {
+    "Party": {
+      "PartyName": "Straits Facility Services Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "M90371234X",
+        "TaxScheme": "GST"
+      },
+      "PartyLegalEntity": {
+        "RegistrationName": "Straits Facility Services Pte Ltd",
+        "CompanyID": "100003"
+      }
+    }
+  },
+  "AccountingCustomerParty": {
+    "Party": {
+      "PartyName": "Northwind Semiconductor (Singapore) Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201598765F",
+        "TaxScheme": "GST"
+      }
+    }
+  },
+  "TaxTotal": [
+    {
+      "TaxAmount": "345.60",
+      "TaxSubtotal": [
+        {
+          "TaxableAmount": "3840.00",
+          "TaxAmount": "345.60",
+          "TaxCategory": {
+            "ID": "S",
+            "Percent": "9",
+            "TaxScheme": "GST"
+          }
+        }
+      ]
+    }
+  ],
+  "LegalMonetaryTotal": {
+    "LineExtensionAmount": "3840.00",
+    "TaxExclusiveAmount": "3840.00",
+    "TaxInclusiveAmount": "4185.60",
+    "PayableAmount": "4185.60"
+  },
+  "InvoiceLine": [
+    {
+      "ID": "00010",
+      "InvoicedQuantity": 8,
+      "unitCode": "EA",
+      "LineExtensionAmount": "3840.00",
+      "Item": {
+        "Description": "Pest Control Treatment",
+        "SellersItemIdentification": "MAT-3002"
+      },
+      "Price": {
+        "PriceAmount": "480.00"
+      }
+    }
+  ]
+}

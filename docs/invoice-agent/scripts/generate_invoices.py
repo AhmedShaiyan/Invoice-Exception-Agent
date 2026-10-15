@@ -160,7 +160,20 @@ def pick_lines(n=1, vendor=None, service=None, min_peinh=None, currency=None, ex
 
 def make_line(ebeln, ebelp, ekpo_row, qty=None, unit_price=None, unit=None, description=None):
     true_unit_price = D(ekpo_row["netpr"]) / D(ekpo_row["peinh"])
-    qty = ekpo_row["menge"] if qty is None else qty
+    if qty is None:
+        # Default to what's actually invoiceable, not the ordered PO qty --
+        # ~10% of goods lines are genuinely under-received (see
+        # generate_mock_sap.py's partial-GR logic), so defaulting to the
+        # ordered menge would silently bill more than was received on those
+        # lines, mislabeling otherwise-"clean" scenarios as clean when the
+        # real validator would (correctly) flag QTY_EXCEEDS_GR. Service
+        # lines have no GR at all -- remaining_qty would be 0 for them, so
+        # they default to the ordered/contracted qty instead, matching how
+        # the validator skips the qty-vs-GR check entirely for is_service.
+        if ekpo_row.get("is_service") == "X":
+            qty = ekpo_row["menge"]
+        else:
+            qty = int(ledger.remaining_qty(ebeln, ebelp))
     price = true_unit_price if unit_price is None else unit_price
     return {"po_item": ekpo_row["ebelp"], "po_number": ebeln, "material": ekpo_row["matnr"],
             "description": description or ekpo_row["txz01"], "quantity": int(qty),
@@ -168,7 +181,7 @@ def make_line(ebeln, ebelp, ekpo_row, qty=None, unit_price=None, unit=None, desc
             "amount": round2(D(qty) * price)}
 
 
-def finalize(vendor_lifnr, lines, inv_date, gst_rate=GST_RATE, gst_reg=None, currency="SGD",
+def finalize(vendor_lifnr, lines, inv_date, gst_rate=GST_RATE, gst_reg=None, currency=None,
              total_override=None, extra_amount=None, invoice_number=None):
     vendor = vendors[vendor_lifnr]
     gst_reg = vendor["stcd1"] if gst_reg is None else gst_reg
@@ -179,6 +192,16 @@ def finalize(vendor_lifnr, lines, inv_date, gst_rate=GST_RATE, gst_reg=None, cur
     gst = round2(subtotal * gst_rate)
     total = round2(subtotal + gst)
     po_numbers = sorted({l["po_number"] for l in lines if l.get("po_number")})
+    if currency is None:
+        # Default to the referenced PO's actual currency, not a hardcoded
+        # "SGD" -- vendor 100017 (Redwood) is USD-denominated, so any
+        # generic scenario generator that happened to draw one of its lines
+        # was stamping "SGD" on a USD PO and spuriously tripping
+        # CURRENCY_MISMATCH on what was supposed to be a clean invoice.
+        # Only gen_usd_invoice's mismatch case wants a real mismatch, and it
+        # passes currency explicitly, so this default never touches it.
+        real_pos = [p for p in po_numbers if p in po_header]
+        currency = po_header[real_pos[0]]["waers"] if real_pos else "SGD"
     return {
         "invoice_number": inv_no, "invoice_date": inv_date.isoformat(),
         "vendor_name": vendor["name1"], "vendor_gst_reg_no": gst_reg,
@@ -534,7 +557,12 @@ def gen_realistic(n=150, exception_rate=0.12):
 
     specs = []
     for code in plan:
-        po = pick_po(min_unused=1)
+        # QTY_EXCEEDS_GR is meaningless on a service line (no GR applies at
+        # all -- see is_service / WEBRE in docs/data_sources.md A1), and the
+        # validator correctly never flags one on quantity, by design (that's
+        # the whole point of service_no_gr). Picking one here would silently
+        # mislabel ground truth, not reveal a validator bug.
+        po = pick_po(service=False, min_unused=1) if code == C.QTY_EXCEEDS_GR else pick_po(min_unused=1)
         if po is None:
             continue
         ebeln, unused = po
@@ -663,11 +691,15 @@ def gen_price_mismatch(n):
 
 
 def gen_tolerance_boundary():
-    """+1.00% must pass (within tolerance); +1.01% and -1.01% must fail.
-    Exercises the exact ±1% edge, not just an obviously-wrong price."""
+    """Tolerance is +/-1%, inclusive (a price exactly at the boundary still
+    passes -- matches CLAUDE.md's "+/-1% tolerance" and the validator's
+    `<=` comparison). An earlier version of this mislabeled the exact +1.00%
+    case as should_pass=False, which would have made ground truth disagree
+    with the validator's own documented, intended semantics -- caught before
+    writing the validator, not after chasing a phantom validator bug."""
     out = []
-    for pct_factor, should_pass in [(Decimal("1.0100"), False), (Decimal("1.0000"), True),
-                                     (Decimal("0.9899"), False)]:
+    for pct_factor, should_pass in [(Decimal("1.0000"), True), (Decimal("1.0100"), True),
+                                     (Decimal("1.0101"), False), (Decimal("0.9899"), False)]:
         po = pick_po(min_unused=1)
         ebeln, unused = po
         ln = unused[0]
@@ -703,7 +735,7 @@ def gen_price_unit_confusion(n):
 def gen_qty_exceeds_receipt(n):
     out = []
     for _ in range(n):
-        po = pick_po(min_unused=1)
+        po = pick_po(service=False, min_unused=1)   # qty-vs-GR is meaningless on a service line
         ebeln, unused = po
         ln = unused[0]
         claim(ebeln, [ln])
@@ -725,7 +757,7 @@ def gen_sequential_partial_overshoot(n_pairs):
     out = []
     for _ in range(n_pairs):
         for _ in range(20):
-            po = pick_po(min_unused=1)
+            po = pick_po(service=False, min_unused=1)   # qty-vs-GR is meaningless on a service line
             ebeln, unused = po
             ln = unused[0]
             remaining = ledger.remaining_qty(ebeln, ln["ebelp"])
@@ -836,9 +868,16 @@ def gen_near_duplicate(n):
     out = []
     candidates = [lifnr for lifnr in ledger.by_vendor if ledger.by_vendor[lifnr]]
     random.shuffle(candidates)
+    # Each reformat must differ from the original under *strict* normalisation
+    # (trim + case-fold) but match under *loose* normalisation (strip all
+    # punctuation) -- see Ledger._norm_strict/_norm_loose. A leading/trailing
+    # space reformat would fail that: .strip() already absorbs it, so the
+    # validator correctly (not incorrectly) treats it as an EXACT duplicate,
+    # not a near one -- caught by actually running the validator against this
+    # scenario, not by inspection.
     reformats = [
         lambda s: s.replace("-", "/"),
-        lambda s: s + " ",
+        lambda s: s.replace("-", " "),
         lambda s: s.replace("-", ""),
     ]
     for i in range(n):
@@ -955,12 +994,14 @@ def gen_gst_rounding_difference(n):
     across ~150 random real PO-line pairs, only ~3-4% diverge on their own,
     and nudging *quantity* barely widened that because it's bounded by
     actual remaining invoiceable qty (often single digits) -- so instead
-    nudge the first line's unit *price* by 1 cent at a time, up to 5 cents,
-    which stays far inside the +/-1% price tolerance for every catalogue
-    item involved and isn't constrained by GR quantity at all. Lines are
-    only claimed from the shared pool once a working combination is
-    confirmed, so a failed attempt doesn't waste lines other scenarios
-    could use."""
+    nudge the first line's unit *price* by 1 cent at a time. A flat "up to 5
+    cents" cap isn't actually safe for every catalogue item though -- it
+    exceeds +/-1% tolerance for anything priced under ~$5 (confirmed: this
+    scenario was spuriously tripping PRICE_VARIANCE on a sub-$5 item before
+    this fix), so the cap is computed per-item instead, bounded by what the
+    price tolerance itself allows. Lines are only claimed from the shared
+    pool once a working combination is confirmed, so a failed attempt
+    doesn't waste lines other scenarios could use."""
     out = []
     attempts = 0
     while len(out) < n and attempts < n * 200:
@@ -971,9 +1012,13 @@ def gen_gst_rounding_difference(n):
         ebeln, unused = po
         lines_sel = unused[:2]
         built = [make_line(ebeln, ln["ebelp"], ln) for ln in lines_sel]
+        original_price = built[0]["unit_price"]
+        max_safe_cents = int((original_price * D("0.01")) / D("0.01"))   # whole cents within +/-1%
+        if max_safe_cents < 1:
+            continue   # too cheap to nudge without risking PRICE_VARIANCE; try another PO
         gst_per_line = gst_on_total = None
-        for cents in range(6):
-            built[0]["unit_price"] = round2(built[0]["unit_price"] + D("0.01") * (1 if cents else 0))
+        for cents in range(max_safe_cents + 1):
+            built[0]["unit_price"] = round2(original_price + D("0.01") * cents)
             built[0]["amount"] = round2(D(built[0]["quantity"]) * built[0]["unit_price"])
             gst_per_line = round2(sum((round2(l["amount"] * GST_RATE) for l in built), D("0")))
             subtotal = round2(sum((l["amount"] for l in built), D("0")))
@@ -981,7 +1026,7 @@ def gen_gst_rounding_difference(n):
             if gst_per_line != gst_on_total:
                 break
         if gst_per_line == gst_on_total:
-            continue   # this PO's lines never diverge within +/-5 cents; try another
+            continue   # this PO's lines never diverge within the safe cent range; try another
         claim(ebeln, lines_sel)
         inv_date = po_date(ebeln)
         inv = finalize(po_header[ebeln]["lifnr"], built, inv_date,
@@ -1052,7 +1097,7 @@ def gen_no_po(n):
 def gen_combined_price_and_qty(n):
     out = []
     for _ in range(n):
-        po = pick_po(min_unused=1)
+        po = pick_po(service=False, min_unused=1)   # qty-vs-GR is meaningless on a service line
         ebeln, unused = po
         ln = unused[0]
         claim(ebeln, [ln])

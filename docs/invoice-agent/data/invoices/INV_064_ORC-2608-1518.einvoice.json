@@ -1,0 +1,96 @@
+{
+  "CustomizationID": "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0",
+  "ProfileID": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+  "ID": "ORC-2608-1518",
+  "IssueDate": "2026-08-05",
+  "InvoiceTypeCode": "380",
+  "DocumentCurrencyCode": "SGD",
+  "OrderReference": {
+    "ID": "4500012220"
+  },
+  "AccountingSupplierParty": {
+    "Party": {
+      "PartyName": "Orchid Networks Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "202034567N",
+        "TaxScheme": "GST"
+      },
+      "PartyLegalEntity": {
+        "RegistrationName": "Orchid Networks Pte Ltd",
+        "CompanyID": "100004"
+      }
+    }
+  },
+  "AccountingCustomerParty": {
+    "Party": {
+      "PartyName": "Northwind Semiconductor (Singapore) Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201598765F",
+        "TaxScheme": "GST"
+      }
+    }
+  },
+  "TaxTotal": [
+    {
+      "TaxAmount": "7136.10",
+      "TaxSubtotal": [
+        {
+          "TaxableAmount": "79290.00",
+          "TaxAmount": "7136.10",
+          "TaxCategory": {
+            "ID": "S",
+            "Percent": "9",
+            "TaxScheme": "GST"
+          }
+        }
+      ]
+    }
+  ],
+  "LegalMonetaryTotal": {
+    "LineExtensionAmount": "79290.00",
+    "TaxExclusiveAmount": "79290.00",
+    "TaxInclusiveAmount": "86426.10",
+    "PayableAmount": "86426.10"
+  },
+  "InvoiceLine": [
+    {
+      "ID": "00010",
+      "InvoicedQuantity": 333,
+      "unitCode": "HR",
+      "LineExtensionAmount": "59940.00",
+      "Item": {
+        "Description": "Network Design Consultation",
+        "SellersItemIdentification": "MAT-4004"
+      },
+      "Price": {
+        "PriceAmount": "180.00"
+      }
+    },
+    {
+      "ID": "00020",
+      "InvoicedQuantity": 0,
+      "unitCode": "EA",
+      "LineExtensionAmount": "0.00",
+      "Item": {
+        "Description": "Wireless Access Point",
+        "SellersItemIdentification": "MAT-4003"
+      },
+      "Price": {
+        "PriceAmount": "395.00"
+      }
+    },
+    {
+      "ID": "00030",
+      "InvoicedQuantity": 9,
+      "unitCode": "EA",
+      "LineExtensionAmount": "19350.00",
+      "Item": {
+        "Description": "48-Port Network Switch",
+        "SellersItemIdentification": "MAT-4001"
+      },
+      "Price": {
+        "PriceAmount": "2150.00"
+      }
+    }
+  ]
+}

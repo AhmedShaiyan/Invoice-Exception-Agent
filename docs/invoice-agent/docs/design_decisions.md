@@ -48,6 +48,33 @@ genuinely ambiguous this way (the `minimal` layout, by construction) and
 label the expected outcome by hand (see the circularity note in
 `scripts/generate_invoices.py`'s module docstring).
 
+## Near-duplicate detection (section 2)
+
+Two tiers of normalisation, not a fuzzy-match score:
+
+- **Exact duplicate**: same vendor, and the invoice number matches after
+  trimming whitespace and case-folding only (`Ledger._norm_strict`).
+- **Near duplicate**: same vendor, and the invoice number matches after
+  additionally stripping *all* punctuation/whitespace (`Ledger._norm_loose`)
+  -- i.e. the same characters in the same order, just reformatted
+  ("LIO-2610-1037" / "LIO/2610/1037" / "LIO26101037" all collapse to the
+  same loose form).
+
+No generic string-similarity score (edit distance, fuzzy ratio) is used
+beyond that. This project's invoice numbers are `VENDOR-YYMM-NNNN`, which
+means two *different*, unrelated invoices from the same vendor in the same
+month already share an 8-character prefix -- measured real pairs from this
+dataset scored as "similar" as 96 on plain edit distance despite being
+genuinely unrelated invoices. No fixed cutoff reliably separates that
+structural coincidence from a real near-duplicate for IDs built this way.
+Every actual near-duplicate this project needs to catch is a
+punctuation/whitespace reformat (the realistic failure mode: OCR drops a
+dash, someone re-keys with spaces instead of dashes, a system exports with
+slashes instead of dashes) -- which `_norm_loose` catches deterministically,
+with no tunable threshold and no false-positive risk from prefix
+coincidence. A generic fuzzy fallback was tried and removed after it kept
+flagging unrelated invoices; see `docs/decisions_log.md` section 2.
+
 ## Sequential, stateful validation (section 1 → section 2)
 
 Two scenarios in the dataset -- `sequential_partial_1_of_2`/`2_of_2` and the
