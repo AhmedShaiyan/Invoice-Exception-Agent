@@ -1,0 +1,581 @@
+[
+  {
+    "file": "INV_01_LIO-2610-1037.pdf",
+    "scenario": "clean",
+    "layout": "modern",
+    "expected_decision": "AUTO_APPROVE",
+    "expected_exceptions": [],
+    "fields": {
+      "invoice_number": "LIO-2610-1037",
+      "invoice_date": "2026-10-02",
+      "vendor_name": "Lion City Office Supplies Pte Ltd",
+      "vendor_gst_reg_no": "201812345K",
+      "po_number": "4500012001",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-1001",
+          "description": "A4 Copier Paper (500 sheets)",
+          "quantity": 199,
+          "unit": "BOX",
+          "unit_price": 6.8,
+          "amount": 1353.2
+        }
+      ],
+      "subtotal": 1353.2,
+      "gst_rate": 0.09,
+      "gst_amount": 121.79,
+      "total": 1474.99
+    }
+  },
+  {
+    "file": "INV_02_STR-2609-1074.pdf",
+    "scenario": "clean",
+    "layout": "classic",
+    "expected_decision": "AUTO_APPROVE",
+    "expected_exceptions": [],
+    "fields": {
+      "invoice_number": "STR-2609-1074",
+      "invoice_date": "2026-09-23",
+      "vendor_name": "Straits Facility Services Pte Ltd",
+      "vendor_gst_reg_no": "M90371234X",
+      "po_number": "4500012003",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-3001",
+          "description": "Office Cleaning - Monthly",
+          "quantity": 3,
+          "unit": "MON",
+          "unit_price": 3200.0,
+          "amount": 9600.0
+        },
+        {
+          "po_item": "00020",
+          "material": "MAT-3002",
+          "description": "Pest Control Treatment",
+          "quantity": 3,
+          "unit": "EA",
+          "unit_price": 480.0,
+          "amount": 1440.0
+        }
+      ],
+      "subtotal": 11040.0,
+      "gst_rate": 0.09,
+      "gst_amount": 993.6,
+      "total": 12033.6
+    }
+  },
+  {
+    "file": "INV_03_CHA-2608-1111.pdf",
+    "scenario": "clean",
+    "layout": "minimal",
+    "expected_decision": "AUTO_APPROVE",
+    "expected_exceptions": [],
+    "fields": {
+      "invoice_number": "CHA-2608-1111",
+      "invoice_date": "2026-08-30",
+      "vendor_name": "Changi Logistics Pte Ltd",
+      "vendor_gst_reg_no": "200945678R",
+      "po_number": "4500012005",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-5002",
+          "description": "Customs Clearance Fee",
+          "quantity": 1,
+          "unit": "EA",
+          "unit_price": 160.0,
+          "amount": 160.0
+        },
+        {
+          "po_item": "00020",
+          "material": "MAT-5001",
+          "description": "Inbound Freight - Pallet",
+          "quantity": 8,
+          "unit": "PAL",
+          "unit_price": 85.0,
+          "amount": 680.0
+        }
+      ],
+      "subtotal": 840.0,
+      "gst_rate": 0.09,
+      "gst_amount": 75.6,
+      "total": 915.6
+    }
+  },
+  {
+    "file": "INV_04_KAL-2609-1148.pdf",
+    "scenario": "clean",
+    "layout": "modern",
+    "expected_decision": "AUTO_APPROVE",
+    "expected_exceptions": [],
+    "fields": {
+      "invoice_number": "KAL-2609-1148",
+      "invoice_date": "2026-09-11",
+      "vendor_name": "Kallang Cleanroom Solutions Pte Ltd",
+      "vendor_gst_reg_no": "M20112345L",
+      "po_number": "4500012007",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-7002",
+          "description": "ESD-Safe Wipes (case)",
+          "quantity": 10,
+          "unit": "CS",
+          "unit_price": 210.0,
+          "amount": 2100.0
+        }
+      ],
+      "subtotal": 2100.0,
+      "gst_rate": 0.09,
+      "gst_amount": 189.0,
+      "total": 2289.0
+    }
+  },
+  {
+    "file": "INV_05_ORC-2609-1185.pdf",
+    "scenario": "clean_partial_receipt",
+    "layout": "classic",
+    "expected_decision": "AUTO_APPROVE",
+    "expected_exceptions": [],
+    "fields": {
+      "invoice_number": "ORC-2609-1185",
+      "invoice_date": "2026-09-04",
+      "vendor_name": "Orchid Networks Pte Ltd",
+      "vendor_gst_reg_no": "202034567N",
+      "po_number": "4500012004",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-4001",
+          "description": "48-Port Network Switch",
+          "quantity": 3,
+          "unit": "EA",
+          "unit_price": 2150.0,
+          "amount": 6450.0
+        }
+      ],
+      "subtotal": 6450.0,
+      "gst_rate": 0.09,
+      "gst_amount": 580.5,
+      "total": 7030.5
+    }
+  },
+  {
+    "file": "INV_06_LIO-2608-1222.pdf",
+    "scenario": "price_within_tolerance",
+    "layout": "minimal",
+    "expected_decision": "AUTO_APPROVE",
+    "expected_exceptions": [],
+    "fields": {
+      "invoice_number": "LIO-2608-1222",
+      "invoice_date": "2026-08-29",
+      "vendor_name": "Lion City Office Supplies Pte Ltd",
+      "vendor_gst_reg_no": "201812345K",
+      "po_number": "4500012009",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-1003",
+          "description": "Ergonomic Office Chair",
+          "quantity": 8,
+          "unit": "EA",
+          "unit_price": 290.16,
+          "amount": 2321.28
+        },
+        {
+          "po_item": "00020",
+          "material": "MAT-1001",
+          "description": "A4 Copier Paper (500 sheets)",
+          "quantity": 186,
+          "unit": "BOX",
+          "unit_price": 6.8,
+          "amount": 1264.8
+        },
+        {
+          "po_item": "00030",
+          "material": "MAT-1002",
+          "description": "Ballpoint Pens, Blue (pack of 50)",
+          "quantity": 25,
+          "unit": "PAK",
+          "unit_price": 18.5,
+          "amount": 462.5
+        }
+      ],
+      "subtotal": 4048.58,
+      "gst_rate": 0.09,
+      "gst_amount": 364.37,
+      "total": 4412.95
+    }
+  },
+  {
+    "file": "INV_07_MER-2609-1259.pdf",
+    "scenario": "price_mismatch",
+    "layout": "modern",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "PRICE_VARIANCE"
+    ],
+    "fields": {
+      "invoice_number": "MER-2609-1259",
+      "invoice_date": "2026-09-09",
+      "vendor_name": "Merlion Data Systems Pte Ltd",
+      "vendor_gst_reg_no": "201923456M",
+      "po_number": "4500012010",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-2002",
+          "description": "NVMe SSD 3.84TB",
+          "quantity": 7,
+          "unit": "EA",
+          "unit_price": 885.6,
+          "amount": 6199.2
+        }
+      ],
+      "subtotal": 6199.2,
+      "gst_rate": 0.09,
+      "gst_amount": 557.93,
+      "total": 6757.13
+    }
+  },
+  {
+    "file": "INV_08_BUK-2609-1296.pdf",
+    "scenario": "price_mismatch",
+    "layout": "classic",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "PRICE_VARIANCE"
+    ],
+    "fields": {
+      "invoice_number": "BUK-2609-1296",
+      "invoice_date": "2026-09-30",
+      "vendor_name": "Bukit Print & Media Pte Ltd",
+      "vendor_gst_reg_no": "201756789W",
+      "po_number": "4500012014",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-6002",
+          "description": "Event Banner 2m x 1m",
+          "quantity": 11,
+          "unit": "EA",
+          "unit_price": 129.6,
+          "amount": 1425.6
+        },
+        {
+          "po_item": "00020",
+          "material": "MAT-6001",
+          "description": "Product Datasheet Printing (1000 pcs)",
+          "quantity": 3,
+          "unit": "LOT",
+          "unit_price": 640.0,
+          "amount": 1920.0
+        }
+      ],
+      "subtotal": 3345.6,
+      "gst_rate": 0.09,
+      "gst_amount": 301.1,
+      "total": 3646.7
+    }
+  },
+  {
+    "file": "INV_09_BUK-2608-1333.pdf",
+    "scenario": "qty_exceeds_receipt",
+    "layout": "minimal",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "QTY_EXCEEDS_GR"
+    ],
+    "fields": {
+      "invoice_number": "BUK-2608-1333",
+      "invoice_date": "2026-08-31",
+      "vendor_name": "Bukit Print & Media Pte Ltd",
+      "vendor_gst_reg_no": "201756789W",
+      "po_number": "4500012006",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-6002",
+          "description": "Event Banner 2m x 1m",
+          "quantity": 12,
+          "unit": "EA",
+          "unit_price": 120.0,
+          "amount": 1440.0
+        },
+        {
+          "po_item": "00020",
+          "material": "MAT-6001",
+          "description": "Product Datasheet Printing (1000 pcs)",
+          "quantity": 2,
+          "unit": "LOT",
+          "unit_price": 640.0,
+          "amount": 1280.0
+        }
+      ],
+      "subtotal": 2720.0,
+      "gst_rate": 0.09,
+      "gst_amount": 244.8,
+      "total": 2964.8
+    }
+  },
+  {
+    "file": "INV_10_CHA-2609-1370.pdf",
+    "scenario": "qty_exceeds_receipt",
+    "layout": "modern",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "QTY_EXCEEDS_GR"
+    ],
+    "fields": {
+      "invoice_number": "CHA-2609-1370",
+      "invoice_date": "2026-09-30",
+      "vendor_name": "Changi Logistics Pte Ltd",
+      "vendor_gst_reg_no": "200945678R",
+      "po_number": "4500012013",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-5002",
+          "description": "Customs Clearance Fee",
+          "quantity": 10,
+          "unit": "EA",
+          "unit_price": 160.0,
+          "amount": 1600.0
+        }
+      ],
+      "subtotal": 1600.0,
+      "gst_rate": 0.09,
+      "gst_amount": 144.0,
+      "total": 1744.0
+    }
+  },
+  {
+    "file": "INV_11_ORC-2608-1407.pdf",
+    "scenario": "no_po",
+    "layout": "classic",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "PO_NOT_FOUND"
+    ],
+    "fields": {
+      "invoice_number": "ORC-2608-1407",
+      "invoice_date": "2026-08-28",
+      "vendor_name": "Orchid Networks Pte Ltd",
+      "vendor_gst_reg_no": "202034567N",
+      "po_number": "4500099917",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-4003",
+          "description": "Wireless Access Point",
+          "quantity": 4,
+          "unit": "EA",
+          "unit_price": 395.0,
+          "amount": 1580.0
+        },
+        {
+          "po_item": "00020",
+          "material": "MAT-4002",
+          "description": "Cat6 Patch Cable 3m",
+          "quantity": 12,
+          "unit": "EA",
+          "unit_price": 4.2,
+          "amount": 50.4
+        }
+      ],
+      "subtotal": 1630.4,
+      "gst_rate": 0.09,
+      "gst_amount": 146.74,
+      "total": 1777.14
+    }
+  },
+  {
+    "file": "INV_12_ORC-2609-1444.pdf",
+    "scenario": "wrong_gst_rate",
+    "layout": "minimal",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "GST_RATE_INVALID"
+    ],
+    "fields": {
+      "invoice_number": "ORC-2609-1444",
+      "invoice_date": "2026-09-03",
+      "vendor_name": "Orchid Networks Pte Ltd",
+      "vendor_gst_reg_no": "202034567N",
+      "po_number": "4500012012",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-4003",
+          "description": "Wireless Access Point",
+          "quantity": 10,
+          "unit": "EA",
+          "unit_price": 395.0,
+          "amount": 3950.0
+        },
+        {
+          "po_item": "00020",
+          "material": "MAT-4002",
+          "description": "Cat6 Patch Cable 3m",
+          "quantity": 3,
+          "unit": "EA",
+          "unit_price": 4.2,
+          "amount": 12.6
+        },
+        {
+          "po_item": "00030",
+          "material": "MAT-4001",
+          "description": "48-Port Network Switch",
+          "quantity": 1,
+          "unit": "EA",
+          "unit_price": 2150.0,
+          "amount": 2150.0
+        }
+      ],
+      "subtotal": 6112.6,
+      "gst_rate": 0.08,
+      "gst_amount": 489.01,
+      "total": 6601.61
+    }
+  },
+  {
+    "file": "INV_13_TAN-2609-1481.pdf",
+    "scenario": "gst_reg_mismatch",
+    "layout": "modern",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "GST_REG_MISMATCH"
+    ],
+    "fields": {
+      "invoice_number": "TAN-2609-1481",
+      "invoice_date": "2026-09-04",
+      "vendor_name": "Tanjong Cloud Services Pte Ltd",
+      "vendor_gst_reg_no": "201799999Z",
+      "po_number": "4500012016",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-8002",
+          "description": "Managed Backup Storage (per TB-month)",
+          "quantity": 58,
+          "unit": "TB",
+          "unit_price": 38.0,
+          "amount": 2204.0
+        }
+      ],
+      "subtotal": 2204.0,
+      "gst_rate": 0.09,
+      "gst_amount": 198.36,
+      "total": 2402.36
+    }
+  },
+  {
+    "file": "INV_14_LIO-2609-1518.pdf",
+    "scenario": "arithmetic_error",
+    "layout": "classic",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "TOTAL_MISMATCH"
+    ],
+    "fields": {
+      "invoice_number": "LIO-2609-1518",
+      "invoice_date": "2026-09-05",
+      "vendor_name": "Lion City Office Supplies Pte Ltd",
+      "vendor_gst_reg_no": "201812345K",
+      "po_number": "4500012017",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-1002",
+          "description": "Ballpoint Pens, Blue (pack of 50)",
+          "quantity": 15,
+          "unit": "PAK",
+          "unit_price": 18.5,
+          "amount": 277.5
+        }
+      ],
+      "subtotal": 277.5,
+      "gst_rate": 0.09,
+      "gst_amount": 24.97,
+      "total": 752.47
+    }
+  },
+  {
+    "file": "INV_15_LIO-2610-1037.pdf",
+    "scenario": "duplicate",
+    "layout": "modern",
+    "expected_decision": "EXCEPTION",
+    "expected_exceptions": [
+      "DUPLICATE_INVOICE"
+    ],
+    "fields": {
+      "invoice_number": "LIO-2610-1037",
+      "invoice_date": "2026-10-02",
+      "vendor_name": "Lion City Office Supplies Pte Ltd",
+      "vendor_gst_reg_no": "201812345K",
+      "po_number": "4500012001",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-1001",
+          "description": "A4 Copier Paper (500 sheets)",
+          "quantity": 199,
+          "unit": "BOX",
+          "unit_price": 6.8,
+          "amount": 1353.2
+        }
+      ],
+      "subtotal": 1353.2,
+      "gst_rate": 0.09,
+      "gst_amount": 121.79,
+      "total": 1474.99
+    }
+  },
+  {
+    "file": "INV_16_STR-2608-1592.pdf",
+    "scenario": "clean_scanned",
+    "layout": "scanned",
+    "expected_decision": "AUTO_APPROVE",
+    "expected_exceptions": [],
+    "fields": {
+      "invoice_number": "STR-2608-1592",
+      "invoice_date": "2026-08-25",
+      "vendor_name": "Straits Facility Services Pte Ltd",
+      "vendor_gst_reg_no": "M90371234X",
+      "po_number": "4500012019",
+      "currency": "SGD",
+      "lines": [
+        {
+          "po_item": "00010",
+          "material": "MAT-3001",
+          "description": "Office Cleaning - Monthly",
+          "quantity": 3,
+          "unit": "MON",
+          "unit_price": 3200.0,
+          "amount": 9600.0
+        }
+      ],
+      "subtotal": 9600.0,
+      "gst_rate": 0.09,
+      "gst_amount": 864.0,
+      "total": 10464.0
+    }
+  }
+]
