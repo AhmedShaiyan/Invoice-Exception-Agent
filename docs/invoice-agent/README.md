@@ -1,13 +1,20 @@
 # AI Invoice Exception Agent
 
-An agentic accounts-payable assistant that reads vendor invoices, runs a
+An accounts-payable assistant that reads vendor invoices, runs a
 **three-way match** against SAP-style purchasing data (PO ↔ goods receipt ↔ invoice),
 validates **Singapore GST**, routes exceptions to a human reviewer with a
 plain-English explanation, and records every step in an **append-only audit trail**.
 
 It mirrors the vendor invoice management workflow finance teams run on ERP
-systems, with LLM agents handling the parts that used to need a person:
-reading unstructured invoices and explaining why something doesn't match.
+systems. Extraction (reading unstructured invoices) and exception explanation
+use an LLM; matching, tax checks, and the approve/reject decision are plain
+deterministic code — an LLM never does arithmetic or approves anything.
+One bounded, read-only tool-calling agent investigates *why* an exception
+happened (see `docs/design_decisions.md`); everything else is a fixed pipeline,
+not a multi-agent framework.
+
+**Status: work in progress, being rebuilt section by section — see the
+roadmap below.** This README will be rewritten fully once the pipeline is real.
 
 ## How it works
 
@@ -55,10 +62,11 @@ python scripts/load_db.py
 ## Roadmap
 
 - [x] Mock SAP purchasing data + Postgres schema
-- [x] Labelled invoice dataset (16 scenarios, 4 layouts)
-- [ ] Extraction agent (Claude, structured output, vision for scans)
-- [ ] Matching + tax-check tools, LangGraph workflow
-- [ ] Exception explanations + suggested actions
-- [ ] Streamlit review queue with approve/reject + audit trail
+- [x] Labelled invoice dataset (16 scenarios, 4 layouts) — being expanded, see below
+- [ ] Deterministic validation engine (plain Python/SQL) + pytest
+- [ ] Extraction (Claude, structured output, vision for scans)
+- [ ] Exception investigation agent (bounded, read-only tools)
+- [ ] Audit log + human approve/reject
 - [ ] Evaluation script scored against ground truth
+- [ ] Streamlit review queue with approve/reject + audit trail
 - [ ] Deploy + demo video

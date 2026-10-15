@@ -1,12 +1,14 @@
 anthropic>=0.40
-langgraph>=0.2
 psycopg[binary]>=3.2
 python-dotenv>=1.0
 pydantic>=2.7
 streamlit>=1.38
 pandas>=2.2
+matplotlib>=3.9
 reportlab>=4.0
-pdf2image>=1.17
+pypdfium2>=4.30
 pypdf>=4.0
 numpy>=1.26
 Pillow>=10.0
+rapidfuzz>=3.9
+pytest>=8.0

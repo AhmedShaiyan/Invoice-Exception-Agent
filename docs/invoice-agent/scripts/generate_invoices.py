@@ -12,27 +12,31 @@ Output: data/invoices/*.pdf and data/invoices/ground_truth.json
 """
 import csv
 import io
-import json
 import random
+import sys
 from collections import defaultdict
 from datetime import date, timedelta
 from pathlib import Path
 
 import numpy as np
+import pypdfium2 as pdfium
 from PIL import Image, ImageFilter
-from pdf2image import convert_from_bytes
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.units import mm
 from reportlab.pdfgen import canvas
 
-random.seed(7)
 ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "src"))
+from invoice_agent.money import D, round2, money_str  # noqa: E402
+from invoice_agent.utils import atomic_write_json  # noqa: E402
+
+random.seed(7)
 SAP = ROOT / "data" / "sap"
 OUT = ROOT / "data" / "invoices"
 OUT.mkdir(parents=True, exist_ok=True)
 
-GST_RATE = 0.09
+GST_RATE = D("0.09")
 BUYER = ("Northwind Semiconductor (Singapore) Pte Ltd",
          "1 Changi Business Park Ave, Singapore 486058")
 
@@ -80,7 +84,7 @@ def build_invoice(idx, scenario, ebeln):
     lines = []
     for ln in po_lines[ebeln]:
         qty = received[(ebeln, ln["ebelp"])]          # bill what was received
-        price = float(ln["netpr"])
+        price = D(ln["netpr"])
         lines.append({"po_item": ln["ebelp"], "material": ln["matnr"],
                       "description": ln["txz01"], "quantity": qty,
                       "unit": ln["meins"], "unit_price": price})
@@ -89,26 +93,27 @@ def build_invoice(idx, scenario, ebeln):
     total_override = None
 
     if scenario == "price_within_tolerance":
-        lines[0]["unit_price"] = round(lines[0]["unit_price"] * 1.004, 2)
+        lines[0]["unit_price"] = round2(lines[0]["unit_price"] * D("1.004"))
     elif scenario == "price_mismatch":
-        lines[0]["unit_price"] = round(lines[0]["unit_price"] * random.choice([1.08, 1.12]), 2)
+        factor = D(str(random.choice([1.08, 1.12])))
+        lines[0]["unit_price"] = round2(lines[0]["unit_price"] * factor)
     elif scenario == "qty_exceeds_receipt":
         for ln, po_ln in zip(lines, po_lines[ebeln]):
             ln["quantity"] = int(po_ln["menge"])    # bills full PO qty, but only part was received
     elif scenario == "no_po":
         po_ref = "4500099917"
     elif scenario == "wrong_gst_rate":
-        gst_rate = 0.08                              # pre-2024 rate
+        gst_rate = D("0.08")                          # pre-2024 rate
     elif scenario == "gst_reg_mismatch":
         gst_reg = "201799999Z"
     elif scenario == "duplicate":
         return None                                 # filled in by caller
 
-    subtotal = round(sum(l["quantity"] * l["unit_price"] for l in lines), 2)
-    gst = round(subtotal * gst_rate, 2)
-    total = round(subtotal + gst, 2)
+    subtotal = round2(sum((D(l["quantity"]) * l["unit_price"] for l in lines), D("0")))
+    gst = round2(subtotal * gst_rate)
+    total = round2(subtotal + gst)
     if scenario == "arithmetic_error":
-        total_override = round(total + 450.00, 2)
+        total_override = round2(total + D("450.00"))
 
     return {
         "invoice_number": inv_no,
@@ -117,11 +122,12 @@ def build_invoice(idx, scenario, ebeln):
         "vendor_gst_reg_no": gst_reg,
         "po_number": po_ref,
         "currency": "SGD",
-        "lines": [{**l, "amount": round(l["quantity"] * l["unit_price"], 2)} for l in lines],
-        "subtotal": subtotal,
-        "gst_rate": gst_rate,
-        "gst_amount": gst,
-        "total": total_override if total_override is not None else total,
+        "lines": [{**l, "unit_price": money_str(l["unit_price"]),
+                   "amount": money_str(D(l["quantity"]) * l["unit_price"])} for l in lines],
+        "subtotal": money_str(subtotal),
+        "gst_rate": str(gst_rate),
+        "gst_amount": money_str(gst),
+        "total": money_str(total_override if total_override is not None else total),
     }
 
 
