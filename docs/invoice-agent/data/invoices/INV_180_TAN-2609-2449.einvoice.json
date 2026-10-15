@@ -1,0 +1,70 @@
+{
+  "CustomizationID": "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0",
+  "ProfileID": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+  "ID": "TAN-2609-2449",
+  "IssueDate": "2026-09-20",
+  "InvoiceTypeCode": "380",
+  "DocumentCurrencyCode": "SGD",
+  "OrderReference": {
+    "ID": "4500012134"
+  },
+  "AccountingSupplierParty": {
+    "Party": {
+      "PartyName": "Tanjong Cloud Services Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "202167890D",
+        "TaxScheme": "GST"
+      },
+      "PartyLegalEntity": {
+        "RegistrationName": "Tanjong Cloud Services Pte Ltd",
+        "CompanyID": "100008"
+      }
+    }
+  },
+  "AccountingCustomerParty": {
+    "Party": {
+      "PartyName": "Northwind Semiconductor (Singapore) Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201598765F",
+        "TaxScheme": "GST"
+      }
+    }
+  },
+  "TaxTotal": [
+    {
+      "TaxAmount": "291.28",
+      "TaxSubtotal": [
+        {
+          "TaxableAmount": "3236.40",
+          "TaxAmount": "291.28",
+          "TaxCategory": {
+            "ID": "S",
+            "Percent": "9",
+            "TaxScheme": "GST"
+          }
+        }
+      ]
+    }
+  ],
+  "LegalMonetaryTotal": {
+    "LineExtensionAmount": "3236.40",
+    "TaxExclusiveAmount": "3236.40",
+    "TaxInclusiveAmount": "3527.68",
+    "PayableAmount": "3527.68"
+  },
+  "InvoiceLine": [
+    {
+      "ID": "00010",
+      "InvoicedQuantity": 261,
+      "unitCode": "HR",
+      "LineExtensionAmount": "3236.40",
+      "Item": {
+        "Description": "GPU Cloud Compute (per node-hour)",
+        "SellersItemIdentification": "MAT-8001"
+      },
+      "Price": {
+        "PriceAmount": "12.40"
+      }
+    }
+  ]
+}

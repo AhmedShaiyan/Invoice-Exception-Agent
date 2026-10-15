@@ -1,9 +1,19 @@
-lifnr,name1,stcd1,ort01,land1
-100001,Lion City Office Supplies Pte Ltd,201812345K,Singapore,SG
-100002,Merlion Data Systems Pte Ltd,201923456M,Singapore,SG
-100003,Straits Facility Services Pte Ltd,M90371234X,Singapore,SG
-100004,Orchid Networks Pte Ltd,202034567N,Singapore,SG
-100005,Changi Logistics Pte Ltd,200945678R,Singapore,SG
-100006,Bukit Print & Media Pte Ltd,201756789W,Singapore,SG
-100007,Kallang Cleanroom Solutions Pte Ltd,M20112345L,Singapore,SG
-100008,Tanjong Cloud Services Pte Ltd,202167890D,Singapore,SG
+lifnr,name1,stcd1,address,zterm,sperr,ort01,land1
+100001,Lion City Office Supplies Pte Ltd,201812345K,"21 Tannery Lane, Singapore 347733",NT30,,Singapore,SG
+100002,Merlion Data Systems Pte Ltd,201923456M,"8 Ubi Road 2, Singapore 408538",NT30,,Singapore,SG
+100003,Straits Facility Services Pte Ltd,M90371234X,"60 Kaki Bukit Place, Singapore 416214",NT60,,Singapore,SG
+100004,Orchid Networks Pte Ltd,202034567N,"3 Fusionopolis Way, Singapore 138633",NT30,,Singapore,SG
+100005,Changi Logistics Pte Ltd,200945678R,"9 Changi South Street 3, Singapore 486361",NT07,,Singapore,SG
+100006,Bukit Print & Media Pte Ltd,201756789W,"2 Kallang Avenue, Singapore 339407",NT30,,Singapore,SG
+100007,Kallang Cleanroom Solutions Pte Ltd,M20112345L,"12 Woodlands Loop, Singapore 738322",NT60,,Singapore,SG
+100008,Tanjong Cloud Services Pte Ltd,202167890D,"7 Straits View, Singapore 018936",NT30,,Singapore,SG
+100009,Jurong Industrial Supplies Pte Ltd,201645678F,"18 Boon Lay Way, Singapore 609966",NT30,,Singapore,SG
+100010,Marina Catering Group Pte Ltd,202278901T,"10 Bayfront Avenue, Singapore 018956",NT07,,Singapore,SG
+100011,Sentosa Events & AV Pte Ltd,201889012Y,"8 Sentosa Gateway, Singapore 098269",NT30,,Singapore,SG
+100012,Pasir Ris Electrical Pte Ltd,201990123B,"30 Pasir Ris Drive 3, Singapore 518838",NT30,,Singapore,SG
+100013,Woodlands Freight Forwarders Pte Ltd,200812345Q,"15 Woodlands Industrial Park E1, Singapore 757056",NT60,,Singapore,SG
+100014,Novena Medical Supplies Pte Ltd,201512345S,"10 Sinaran Drive, Singapore 307506",NT30,,Singapore,SG
+100015,Bedok Hardware Trading Pte Ltd,201234567A,"1 Bedok North Road, Singapore 469661",NT30,X,Singapore,SG
+100016,Yishun Security Systems Pte Ltd,202045678C,"51 Yishun Industrial Park A, Singapore 768734",NT30,X,Singapore,SG
+100017,Redwood Overseas Equipment Inc,202256789E,"1 Raffles Place, Singapore 048616",NT30,,Singapore,SG
+100018,Punggol Waste Management Pte Ltd,201367890G,"80 Punggol Central, Singapore 828761",NT60,,Singapore,SG
