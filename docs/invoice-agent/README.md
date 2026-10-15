@@ -34,18 +34,41 @@ invoice PDF ──► Extract ──► Match (PO / GR) ──► Tax check ─�
 | GST rate | `GST_RATE_INVALID` | 9% standard rate |
 | GST registration | `GST_REG_MISMATCH` | Matches vendor master (`LFA1.STCD1`) |
 | Arithmetic | `TOTAL_MISMATCH` | Lines + GST = total |
-| Duplicates | `DUPLICATE_INVOICE` | Same vendor + invoice number already processed |
+| Duplicates | `DUPLICATE_INVOICE` / `NEAR_DUPLICATE_INVOICE` | Same vendor + invoice number (or a reformatted near-match) already processed |
+| Vendor | `VENDOR_NOT_FOUND` / `VENDOR_BLOCKED` | Vendor doesn't exist, or exists but is centrally blocked (`LFA1.SPERR`) |
+| Price unit | `PRICE_UNIT_MISMATCH` | Invoice billed at `EKPO.NETPR` directly, ignoring `PEINH` (e.g. a "per 100 units" price charged per unit) |
+| Unit of measure | `UOM_MISMATCH` | Invoice line's unit doesn't match the PO line's |
+| Unmatched line | `LINE_NOT_ON_PO` | Invoice line (e.g. freight) has no corresponding PO line |
+| Currency | `CURRENCY_MISMATCH` | Invoice currency doesn't match the PO's |
+| Credit notes | `CREDIT_NOTE_UNSUPPORTED` | Routed to review rather than guessing a netting treatment |
+
+Full rule definitions and SAP/IRAS sourcing: `docs/data_sources.md`.
 
 ## Data
 
 All data is synthetic and the companies are fictional.
 
-- `data/sap/` holds mock SAP tables using real S/4HANA names: `LFA1` (vendors),
-  `EKKO`/`EKPO` (purchase orders), `MSEG` (goods receipts), with some partial deliveries.
-- `data/invoices/` holds 16 invoice PDFs in three layouts plus one scanned image-only PDF,
-  each tied to a scenario.
-- `data/invoices/ground_truth.json` has the expected fields, decision and exception codes
-  for every invoice, used to score the agent.
+- `data/sap/` holds mock SAP tables using real S/4HANA names: `LFA1` (vendors,
+  with address/payment terms/blocked flag), `EKKO`/`EKPO` (purchase orders, with
+  price unit, GR tolerance, GR-based invoice verification flag, tax code, service
+  lines), `MSEG` (goods movements, incl. returns), `EKBE` (PO history — cumulative
+  GR/invoice quantities), `RBKP`/`RSEG` (historical posted invoices, for
+  duplicate detection). See `docs/data_sources.md` for what each field means and
+  where that definition comes from, including the places this is a deliberate
+  simplification of real SAP behaviour.
+- `data/invoices/` holds 216 invoices: a "realistic" set (150, ~88% clean) and a
+  hand-authored "edge case" set (~66, at least 3 examples of each failure mode —
+  combined exceptions, tolerance boundaries, price-unit confusion, UoM mismatch,
+  sequential partial invoices, service lines with no GR, unknown/blocked vendors,
+  near-duplicates, multi-PO invoices, credit notes, unmatched freight lines,
+  foreign currency, GST rounding variance, messy scans, and prompt-injection
+  probes). 5 layouts (one deliberately keyless — see `docs/design_decisions.md`
+  for how line matching handles it) plus a scanned/OCR variant, and a few
+  simplified e-invoice (Peppol/InvoiceNow-style) JSON samples.
+- `data/invoices/ground_truth.json` has the expected fields, decision and exception
+  codes for every invoice, used to score the pipeline. Written atomically after
+  every invoice during generation, so a crash partway through can't corrupt or
+  lose it.
 
 ## Quick start
 

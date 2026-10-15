@@ -1,0 +1,83 @@
+{
+  "CustomizationID": "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0",
+  "ProfileID": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+  "ID": "CHA-2608-1994",
+  "IssueDate": "2026-08-21",
+  "InvoiceTypeCode": "380",
+  "DocumentCurrencyCode": "SGD",
+  "OrderReference": {
+    "ID": "4500012095"
+  },
+  "AccountingSupplierParty": {
+    "Party": {
+      "PartyName": "Changi Logistics Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "200945678R",
+        "TaxScheme": "GST"
+      },
+      "PartyLegalEntity": {
+        "RegistrationName": "Changi Logistics Pte Ltd",
+        "CompanyID": "100005"
+      }
+    }
+  },
+  "AccountingCustomerParty": {
+    "Party": {
+      "PartyName": "Northwind Semiconductor (Singapore) Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201598765F",
+        "TaxScheme": "GST"
+      }
+    }
+  },
+  "TaxTotal": [
+    {
+      "TaxAmount": "281.70",
+      "TaxSubtotal": [
+        {
+          "TaxableAmount": "3130.00",
+          "TaxAmount": "281.70",
+          "TaxCategory": {
+            "ID": "S",
+            "Percent": "9",
+            "TaxScheme": "GST"
+          }
+        }
+      ]
+    }
+  ],
+  "LegalMonetaryTotal": {
+    "LineExtensionAmount": "3130.00",
+    "TaxExclusiveAmount": "3130.00",
+    "TaxInclusiveAmount": "3411.70",
+    "PayableAmount": "3411.70"
+  },
+  "InvoiceLine": [
+    {
+      "ID": "00010",
+      "InvoicedQuantity": 10,
+      "unitCode": "EA",
+      "LineExtensionAmount": "1600.00",
+      "Item": {
+        "Description": "Customs Clearance Fee",
+        "SellersItemIdentification": "MAT-5002"
+      },
+      "Price": {
+        "PriceAmount": "160.00"
+      }
+    },
+    {
+      "ID": "00020",
+      "InvoicedQuantity": 18,
+      "unitCode": "PAL",
+      "LineExtensionAmount": "1530.00",
+      "Item": {
+        "Description": "Inbound Freight - Pallet",
+        "SellersItemIdentification": "MAT-5001"
+      },
+      "Price": {
+        "PriceAmount": "85.00"
+      }
+    }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "CustomizationID": "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0",
+  "ProfileID": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+  "ID": "TAN-2610-1966",
+  "IssueDate": "2026-10-07",
+  "InvoiceTypeCode": "380",
+  "DocumentCurrencyCode": "SGD",
+  "OrderReference": {
+    "ID": "4500012350"
+  },
+  "AccountingSupplierParty": {
+    "Party": {
+      "PartyName": "Tanjong Cloud Services Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "202167890D",
+        "TaxScheme": "GST"
+      },
+      "PartyLegalEntity": {
+        "RegistrationName": "Tanjong Cloud Services Pte Ltd",
+        "CompanyID": "100008"
+      }
+    }
+  },
+  "AccountingCustomerParty": {
+    "Party": {
+      "PartyName": "Northwind Semiconductor (Singapore) Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201598765F",
+        "TaxScheme": "GST"
+      }
+    }
+  },
+  "TaxTotal": [
+    {
+      "TaxAmount": "51.30",
+      "TaxSubtotal": [
+        {
+          "TaxableAmount": "570.00",
+          "TaxAmount": "51.30",
+          "TaxCategory": {
+            "ID": "S",
+            "Percent": "9",
+            "TaxScheme": "GST"
+          }
+        }
+      ]
+    }
+  ],
+  "LegalMonetaryTotal": {
+    "LineExtensionAmount": "570.00",
+    "TaxExclusiveAmount": "570.00",
+    "TaxInclusiveAmount": "621.30",
+    "PayableAmount": "621.30"
+  },
+  "InvoiceLine": [
+    {
+      "ID": "00010",
+      "InvoicedQuantity": 15,
+      "unitCode": "TB",
+      "LineExtensionAmount": "570.00",
+      "Item": {
+        "Description": "Managed Backup Storage (per TB-month)",
+        "SellersItemIdentification": "MAT-8002"
+      },
+      "Price": {
+        "PriceAmount": "38.00"
+      }
+    }
+  ]
+}

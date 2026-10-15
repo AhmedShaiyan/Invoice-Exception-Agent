@@ -1,0 +1,70 @@
+{
+  "CustomizationID": "urn:cen.eu:en16931:2017#compliant#urn:fdc:peppol.eu:2017:poacc:billing:international:sg:3.0",
+  "ProfileID": "urn:fdc:peppol.eu:2017:poacc:billing:01:1.0",
+  "ID": "BUK-2607-2001",
+  "IssueDate": "2026-07-23",
+  "InvoiceTypeCode": "380",
+  "DocumentCurrencyCode": "SGD",
+  "OrderReference": {
+    "ID": "4500012312"
+  },
+  "AccountingSupplierParty": {
+    "Party": {
+      "PartyName": "Bukit Print & Media Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201756789W",
+        "TaxScheme": "GST"
+      },
+      "PartyLegalEntity": {
+        "RegistrationName": "Bukit Print & Media Pte Ltd",
+        "CompanyID": "100006"
+      }
+    }
+  },
+  "AccountingCustomerParty": {
+    "Party": {
+      "PartyName": "Northwind Semiconductor (Singapore) Pte Ltd",
+      "PartyTaxScheme": {
+        "CompanyID": "201598765F",
+        "TaxScheme": "GST"
+      }
+    }
+  },
+  "TaxTotal": [
+    {
+      "TaxAmount": "12.15",
+      "TaxSubtotal": [
+        {
+          "TaxableAmount": "135.00",
+          "TaxAmount": "12.15",
+          "TaxCategory": {
+            "ID": "S",
+            "Percent": "9",
+            "TaxScheme": "GST"
+          }
+        }
+      ]
+    }
+  ],
+  "LegalMonetaryTotal": {
+    "LineExtensionAmount": "135.00",
+    "TaxExclusiveAmount": "135.00",
+    "TaxInclusiveAmount": "147.15",
+    "PayableAmount": "147.15"
+  },
+  "InvoiceLine": [
+    {
+      "ID": "00020",
+      "InvoicedQuantity": 3,
+      "unitCode": "LOT",
+      "LineExtensionAmount": "135.00",
+      "Item": {
+        "Description": "Business Card Printing (500 pcs)",
+        "SellersItemIdentification": "MAT-6003"
+      },
+      "Price": {
+        "PriceAmount": "45.00"
+      }
+    }
+  ]
+}

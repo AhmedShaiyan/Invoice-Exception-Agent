@@ -329,11 +329,29 @@ def render_statement(c, inv):
     c.setFillColor(colors.HexColor("#F2F2F0"))
     c.rect(0, 0, 55 * mm, h, fill=1, stroke=0)
     c.setFillColor(colors.black)
-    c.setFont("Helvetica-Bold", 13)
-    c.drawString(6 * mm, h - 20 * mm, inv["vendor_name"][:26])
+    # Wrap the vendor name to fit the 55mm sidebar (minus margins) instead of
+    # a flat character cap -- a flat cap let long names overrun into the main
+    # header text (seen directly: "Redwood Overseas Equipment" collided with
+    # "TAX INVOICE / STATEMENT").
+    name_font, name_size, max_w = "Helvetica-Bold", 13, 46 * mm
+    words, lines_wrapped, cur = inv["vendor_name"].split(), [], ""
+    for word in words:
+        trial = (cur + " " + word).strip()
+        if c.stringWidth(trial, name_font, name_size) <= max_w:
+            cur = trial
+        else:
+            if cur:
+                lines_wrapped.append(cur)
+            cur = word
+    if cur:
+        lines_wrapped.append(cur)
+    c.setFont(name_font, name_size)
+    for i, line in enumerate(lines_wrapped[:3]):
+        c.drawString(6 * mm, h - (14 + i * 6) * mm, line)
+    sidebar_y0 = 14 + len(lines_wrapped[:3]) * 6 + 4
     c.setFont("Helvetica", 8)
     for i, line in enumerate(["GST Reg:", inv["vendor_gst_reg_no"], "", "Remit to the above", "entity only."]):
-        c.drawString(6 * mm, h - (28 + i * 5) * mm, line)
+        c.drawString(6 * mm, h - (sidebar_y0 + i * 5) * mm, line)
 
     x0 = 62 * mm
     c.setFont("Helvetica-Bold", 16)
@@ -933,16 +951,19 @@ def gen_gst_rounding_difference(n):
     exact (unrounded) GST falls relative to a .xx5 boundary -- and it can
     *never* happen with only one line (rounding one number twice is a
     no-op, so an earlier version of this that didn't require >= 2 lines
-    silently produced zero real test cases, 3/3 times). So: require a PO
-    with >= 2 unused lines, then nudge quantity by +1 on the first line,
-    a few times if needed, until the two methods actually disagree --
-    still a real invoice built from real catalogue data, just not left to
-    chance on whether it tests what it claims to. Lines are only claimed
-    from the shared pool once a working combination is confirmed, so a
-    failed attempt doesn't waste lines other scenarios could use."""
+    silently produced zero real test cases, 3/3 times). Measured empirically:
+    across ~150 random real PO-line pairs, only ~3-4% diverge on their own,
+    and nudging *quantity* barely widened that because it's bounded by
+    actual remaining invoiceable qty (often single digits) -- so instead
+    nudge the first line's unit *price* by 1 cent at a time, up to 5 cents,
+    which stays far inside the +/-1% price tolerance for every catalogue
+    item involved and isn't constrained by GR quantity at all. Lines are
+    only claimed from the shared pool once a working combination is
+    confirmed, so a failed attempt doesn't waste lines other scenarios
+    could use."""
     out = []
     attempts = 0
-    while len(out) < n and attempts < n * 30:
+    while len(out) < n and attempts < n * 200:
         attempts += 1
         po = pick_po(min_unused=2)
         if po is None:
@@ -950,20 +971,17 @@ def gen_gst_rounding_difference(n):
         ebeln, unused = po
         lines_sel = unused[:2]
         built = [make_line(ebeln, ln["ebelp"], ln) for ln in lines_sel]
-        line0_remaining = int(ledger.remaining_qty(ebeln, lines_sel[0]["ebelp"]))
         gst_per_line = gst_on_total = None
-        for _nudge in range(60):
+        for cents in range(6):
+            built[0]["unit_price"] = round2(built[0]["unit_price"] + D("0.01") * (1 if cents else 0))
+            built[0]["amount"] = round2(D(built[0]["quantity"]) * built[0]["unit_price"])
             gst_per_line = round2(sum((round2(l["amount"] * GST_RATE) for l in built), D("0")))
             subtotal = round2(sum((l["amount"] for l in built), D("0")))
             gst_on_total = round2(subtotal * GST_RATE)
             if gst_per_line != gst_on_total:
                 break
-            if built[0]["quantity"] + 1 > line0_remaining:
-                break   # don't nudge past what's actually invoiceable on this line
-            built[0]["quantity"] += 1
-            built[0]["amount"] = round2(D(built[0]["quantity"]) * built[0]["unit_price"])
         if gst_per_line == gst_on_total:
-            continue   # this PO's lines never diverge within the safe nudge range; try another
+            continue   # this PO's lines never diverge within +/-5 cents; try another
         claim(ebeln, lines_sel)
         inv_date = po_date(ebeln)
         inv = finalize(po_header[ebeln]["lifnr"], built, inv_date,
