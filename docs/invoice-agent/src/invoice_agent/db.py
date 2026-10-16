@@ -1,0 +1,106 @@
+"""Postgres persistence: ap.invoices, ap.exceptions, ap.audit_log.
+
+ap.audit_log is append-only by construction, not just convention: this
+module contains exactly one function that writes to it (`log_audit`), and
+that function only ever INSERTs. Grep this file for "UPDATE ap.audit_log"
+or "DELETE FROM ap.audit_log" -- there isn't one, and tests/test_db.py
+checks that by searching the source directly, so the guarantee can't
+silently erode as the module grows.
+
+ap.invoices.decision is the one piece of genuinely mutable state: the
+pipeline sets it to AUTO_APPROVE/EXCEPTION, and a human review can later
+change it to APPROVED/REJECTED. That's an ordinary "current state" update,
+not a violation of the audit principle -- every transition is independently
+recorded in audit_log via log_audit() in the same call, so the full history
+survives even though the "current state" table doesn't preserve it itself.
+"""
+import json
+import os
+from decimal import Decimal
+
+import psycopg
+from dotenv import load_dotenv
+
+from . import codes as C
+
+load_dotenv()
+
+
+def connect():
+    return psycopg.connect(os.environ["DATABASE_URL"])
+
+
+def _money(d):
+    return str(d) if d is not None else None
+
+
+def insert_invoice(conn, source_file: str, fields: dict, decision: str) -> int:
+    """fields is an extraction output dict (possibly with some keys missing
+    if extraction failed -- insert what's available, NULL the rest)."""
+    fields = fields or {}
+    with conn.cursor() as cur:
+        cur.execute(
+            """INSERT INTO ap.invoices
+               (source_file, vendor_name, vendor_gst_reg_no, invoice_number, invoice_date,
+                po_number, currency, subtotal, gst_rate, gst_amount, total, extracted_json, decision)
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (source_file, fields.get("vendor_name"), fields.get("vendor_gst_reg_no"),
+             fields.get("invoice_number"), fields.get("invoice_date") or None,
+             fields.get("po_number"), fields.get("currency"), _money(fields.get("subtotal")),
+             fields.get("gst_rate"), _money(fields.get("gst_amount")), _money(fields.get("total")),
+             json.dumps(fields), decision),
+        )
+        invoice_id = cur.fetchone()[0]
+    conn.commit()
+    return invoice_id
+
+
+def insert_exceptions(conn, invoice_id: int, exception_codes: list, detail_by_code: dict = None,
+                       explanation: str = None, suggested_action: str = None) -> None:
+    detail_by_code = detail_by_code or {}
+    with conn.cursor() as cur:
+        for code in exception_codes:
+            cur.execute(
+                """INSERT INTO ap.exceptions
+                   (invoice_id, code, severity, detail, explanation, suggested_action)
+                   VALUES (%s,%s,%s,%s,%s,%s)""",
+                (invoice_id, code, C.SEVERITY.get(code, "MEDIUM"),
+                 json.dumps(detail_by_code.get(code, {})), explanation, suggested_action),
+            )
+    conn.commit()
+
+
+def update_decision(conn, invoice_id: int, decision: str) -> None:
+    """The one legitimate update path -- see module docstring. Always
+    paired with a log_audit() call recording the same transition."""
+    with conn.cursor() as cur:
+        cur.execute("UPDATE ap.invoices SET decision = %s WHERE id = %s", (decision, invoice_id))
+    conn.commit()
+
+
+def log_audit(conn, invoice_id, actor: str, action: str, payload: dict = None, model: str = None) -> None:
+    """The only write path to ap.audit_log. INSERT only -- see module docstring."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO ap.audit_log (invoice_id, actor, action, payload, model) VALUES (%s,%s,%s,%s,%s)",
+            (invoice_id, actor, action, json.dumps(payload or {}, default=str), model),
+        )
+    conn.commit()
+
+
+def record_human_decision(conn, invoice_id: int, decision: str, reviewer: str, reason: str) -> None:
+    """decision must be 'APPROVED' or 'REJECTED' -- enforced by the schema's
+    CHECK constraint too, this is just a clearer failure point."""
+    if decision not in ("APPROVED", "REJECTED"):
+        raise ValueError(f"decision must be APPROVED or REJECTED, got {decision!r}")
+    update_decision(conn, invoice_id, decision)
+    log_audit(conn, invoice_id, f"user:{reviewer}", decision.lower(), payload={"reason": reason})
+
+
+def get_audit_trail(conn, invoice_id: int) -> list:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, actor, action, payload, model, created_at FROM ap.audit_log "
+            "WHERE invoice_id = %s ORDER BY created_at, id", (invoice_id,))
+        cols = [d.name for d in cur.description]
+        return [dict(zip(cols, row)) for row in cur.fetchall()]

@@ -29,6 +29,21 @@ ALL_CODES = [
     EXTRACTION_FAILED, LOW_CONFIDENCE_EXTRACTION,
 ]
 
+# Financial-risk severity, used for ap.exceptions.severity and queue
+# triage. A judgment call documented in docs/decisions_log.md section 5 --
+# roughly: HIGH = money could move wrongly or a real compliance/fraud
+# signal; MEDIUM = needs a human to resolve but isn't itself a sign the
+# invoice is actively wrong; LOW = narrow, usually-cosmetic mismatches.
+SEVERITY = {
+    DUPLICATE_INVOICE: "HIGH", VENDOR_BLOCKED: "HIGH", CREDIT_NOTE_UNSUPPORTED: "HIGH",
+    PRICE_VARIANCE: "HIGH", PRICE_UNIT_MISMATCH: "HIGH", TOTAL_MISMATCH: "HIGH",
+    CURRENCY_MISMATCH: "HIGH",
+    QTY_EXCEEDS_GR: "MEDIUM", GST_REG_MISMATCH: "MEDIUM", NEAR_DUPLICATE_INVOICE: "MEDIUM",
+    PO_NOT_FOUND: "MEDIUM", VENDOR_NOT_FOUND: "MEDIUM",
+    EXTRACTION_FAILED: "MEDIUM", LOW_CONFIDENCE_EXTRACTION: "MEDIUM",
+    UOM_MISMATCH: "LOW", LINE_NOT_ON_PO: "LOW", GST_RATE_INVALID: "LOW",
+}
+
 DESCRIPTIONS = {
     PO_NOT_FOUND: "Invoice references a PO number that doesn't exist in EKKO.",
     VENDOR_NOT_FOUND: "Invoice's claimed vendor doesn't match any vendor in LFA1.",

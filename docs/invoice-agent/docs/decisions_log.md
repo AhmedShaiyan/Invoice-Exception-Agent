@@ -409,3 +409,64 @@ nudge (up to 5 cents, to find a rounding divergence) wasn't itself bounded
 by the +/-1% price tolerance, so it could overshoot into a real
 PRICE_VARIANCE on cheap items -- now capped per-item at what the tolerance
 actually allows.
+
+## Section 5 — Audit log, human review, and the orchestration pipeline
+
+**`ap.audit_log` is append-only by construction, not convention.** `db.py`
+contains exactly one function that writes to it (`log_audit`), and that
+function only ever `INSERT`s. `ap.invoices.decision` is the one genuinely
+mutable field -- the pipeline sets it once at insert time, and a human
+review can later move it to APPROVED/REJECTED via `record_human_decision`,
+which always pairs the update with an independent audit-log entry so the
+full history survives even though the "current state" row doesn't preserve
+it itself.
+
+**Caught before it ever ran against a real invoice: `pipeline.py`'s first
+draft inserted a `"PENDING"` placeholder decision at the top of
+`process_invoice`, to be fixed up by `update_decision()` once validation
+ran.** `ap.invoices.decision` has a `CHECK (decision IN ('AUTO_APPROVE',
+'EXCEPTION','APPROVED','REJECTED'))` constraint -- there's no pending value,
+so that insert would have thrown `CheckViolation` on *every single
+successfully-extracted invoice*, i.e. the common case, not an edge case.
+Caught by re-reading `schema.sql` against the draft before running it, not
+by a test catching it after the fact. Fixed by restructuring the pipeline
+so extraction and validation both run before the one `insert_invoice` call,
+which then always carries the real initial decision. Added
+`test_decision_passed_to_db_insert_is_always_a_schema_valid_value` and
+`test_insert_invoice_rejects_invalid_decision_via_check_constraint` so this
+specific class of bug can't silently come back.
+
+**`psycopg.connect()` to `localhost:5433` took ~130 seconds per call on this
+machine; `127.0.0.1:5433` takes ~0.06s.** Found because `tests/test_db.py`'s
+8 tests took 15 minutes to run (910s -- 7 fresh connections x ~130s each).
+Root cause: Windows resolves `"localhost"` to `::1` first; Docker Desktop's
+`5433:5432` port mapping doesn't actually serve on the IPv6 loopback, so the
+client waits out a long OS-level TCP connect timeout before falling back to
+IPv4. This is a Windows/Docker Desktop interaction, not a code bug, but it's
+exactly the kind of thing that would make `scripts/load_db.py` and the
+section 6 eval run look hung or broken for no apparent reason. Fixed by
+changing `DATABASE_URL` in `.env`/`.env.example` to use `127.0.0.1`
+explicitly. Worth remembering for the deployment section too: a hosted
+Postgres (Neon) is reached by a real hostname over the public internet, not
+`localhost`, so this specific failure mode is local-dev-only and shouldn't
+recur in production -- but any future "a DB call is mysteriously slow on
+Windows" symptom should check this first before assuming it's the query.
+
+**`src/invoice_agent/pipeline.py` is the one orchestration entry point**
+both section 6 (eval) and section 7 (Streamlit) will call --
+extract -> validate -> (if exception) investigate -> persist, with the
+idempotency check running first so a re-uploaded copy of the same bytes
+short-circuits before any of extraction, validation, investigation, or a DB
+write happens again. `tests/test_pipeline.py` mocks the extractor,
+validator, and investigator to test the wiring itself in isolation (order
+of calls, investigation skipped on a clean invoice, extraction-failure
+short-circuit skips validation entirely) -- the real extractor/validator/
+investigator each already have their own test suites against real data or
+mocks for hard-cap enforcement, so this suite's only job is the glue.
+Verified live end-to-end twice after the unit tests passed: once with
+`investigate_exceptions=False` against a real e-invoice JSON sample (clean,
+AUTO_APPROVE, two audit-log rows), and once with a real PDF through the
+full Claude extraction -> validation -> agent investigation ->
+`ap.exceptions` path (`INV_002_PUN-2606-1315.pdf`, LINE_NOT_ON_PO, a
+grounded explanation citing the actual PO line and freight charge, stored
+correctly in both `ap.audit_log` and `ap.exceptions.explanation`).
