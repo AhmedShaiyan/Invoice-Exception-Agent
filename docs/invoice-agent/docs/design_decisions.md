@@ -48,6 +48,57 @@ genuinely ambiguous this way (the `minimal` layout, by construction) and
 label the expected outcome by hand (see the circularity note in
 `scripts/generate_invoices.py`'s module docstring).
 
+## Why the exception investigator is an agent, not a workflow (section 4)
+
+CLAUDE.md requires the opposite of the usual bias: justify reaching for
+agentic tool-calling rather than assume it. Here's that argument made
+honestly, both directions, with a recommendation -- the same shape the
+original architecture review (before any code existed) asked for.
+
+**The case for a fixed workflow instead.** With 5 tools and ~17 exception
+codes, the investigation space is small enough to hand-enumerate:
+`if GST_REG_MISMATCH: call get_vendor_master` is a one-line, fully testable
+mapping. A fixed workflow is strictly more auditable -- for a SOX-style audit
+trail, "the code always looks up X for this exception type" is a cleaner
+answer than "the model decided to." It's also cheaper and faster (one or two
+deterministic lookups beat a multi-turn tool-calling loop), and every one of
+the three real investigations run during development above (GST_REG_MISMATCH,
+DUPLICATE_INVOICE, VENDOR_BLOCKED) used exactly the 1-2 tools a human
+investigating that exception code by hand would reach for first, in an order
+a lookup table could have specified in advance. Nothing about those three
+runs *required* judgment a workflow couldn't express.
+
+**The case for an agent.** The one scenario in this project's dataset that
+actually needed data-dependent branching is QTY_EXCEEDS_GR on a line with a
+genuinely ambiguous goods-receipt history (the `sequential_partial_*`
+scenario family): whether the right next lookup is "check goods receipts
+again," "check prior invoices for a resubmission pattern," or "stop, this is
+explained" depends on what the first lookup returns -- not on the exception
+code alone, which is the same QTY_EXCEEDS_GR whether the real cause is a
+late GR, a resubmission, or a genuine overbill. A fixed `if code == X: call
+Y` mapping can't express "call Z only if Y came back ambiguous" without
+turning into its own decision tree that's just the agent's judgment,
+pre-compiled by hand and therefore unable to adapt to a case the author
+didn't anticipate. The investigation run against that exact scenario (see
+`docs/decisions_log.md` section 4) is the concrete evidence: the agent
+called `get_po_history` then `get_goods_receipts`, read that only one GR had
+posted and the remaining balance had never arrived, and explained that --
+two tools, chosen in response to what the first one returned, not a fixed
+sequence.
+
+**Recommendation, honestly stated**: build it as the bounded agent (as done
+here), but the justification is narrow and specific -- the QTY_EXCEEDS_GR
+ambiguous-history case -- not "agents are generally better at this." For
+most of the exception codes in this project, a fixed workflow would score
+identically on the real test runs above, and that's a genuine finding, not
+a hedge. What actually earns the agentic design is containment, not
+necessity: every tool is read-only, there is no approve/reject tool to even
+offer the model, and a hard cap means a bad tool-selection sequence wastes
+at most a few API calls, never touches data, and never produces a worse
+outcome than "the explanation is less useful than it could have been." The
+blast radius of being wrong here is close to zero, which is what makes it
+defensible to let the model choose at all.
+
 ## Near-duplicate detection (section 2)
 
 Two tiers of normalisation, not a fuzzy-match score:

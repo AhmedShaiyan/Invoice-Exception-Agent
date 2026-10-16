@@ -342,6 +342,63 @@ cost and a new failure mode for zero benefit. Confidence is reported as
 tested against a real generated e-invoice sample end-to-end through the
 validator, not just schema-checked.
 
+## Section 4 — Exception investigation agent
+
+**Investigation and reporting are two separate API calls, not one.** The
+tool-use loop gathers evidence with `tools=TOOLS` and no output schema; once
+the model stops calling tools (or the hard cap is hit), a *second*, separate
+call -- no tools, `output_format=InvestigationResult` -- turns the gathered
+evidence into the explanation. Tried making every turn conform to the final
+schema in one combined call first; splitting it was simpler to reason about
+and log, and avoided forcing a schema onto mid-investigation turns that
+don't have a final answer yet.
+
+**Real bug, found on the first live multi-tool-call test: the final report
+call returned `parsed_output: None` with `stop_reason: max_tokens`, no
+exception raised.** Sonnet 5 runs adaptive thinking by default, and the
+report call's `max_tokens=1024` budget was spent entirely on an (invisible,
+`display` defaults to omitted) thinking block, leaving nothing for the
+actual structured output. Fixed with `thinking={"type": "disabled"}` on
+that specific call -- it only writes up findings the tool-use loop already
+gathered, not new reasoning, so there's no quality cost to disabling it
+there -- plus doubled `max_tokens` to 2048 as a safety margin. Deliberately
+did *not* apply the same fix to extraction's structured-output call
+(section 3): that one has worked correctly in every live test, including
+on a deliberately messy scan where the model's extended reasoning plausibly
+helped it produce a genuinely thoughtful confidence explanation -- disabling
+thinking there would be a speculative "fix" to something that isn't broken.
+
+**The hard tool-call cap is tested as an enforced property, not an observed
+one.** A mocked client that always wants another tool call (forever, if
+allowed) confirms the loop actually stops dispatching at the cap -- the live
+model never came close to needing this in manual testing (every real
+investigation used 1-4 of its 6 available calls), which is exactly why it
+needed a test that doesn't depend on the model's cooperation to prove the
+limit is real.
+
+**The groundedness checker (for section 6's eval) had false positives on
+the very first run against real output**: the agent correctly restated
+numbers from the invoice it was *given* (PO number, invoice quantity) --
+not something it needed a tool to look up -- and the original checker only
+counted tool outputs as valid evidence, flagging those as "ungrounded."
+Fixed by also treating the invoice's own fields as legitimate evidence; the
+system prompt's "only state what a tool returned" rule is specifically
+about PO/GR/vendor facts the agent has to look up, not the invoice data it
+was handed as the task. The checker also doesn't credit a legitimate
+arithmetic derivative (e.g. "94 ordered minus 56 received leaves 38
+outstanding") as grounded even though both inputs came from real tool
+output -- a known, documented limitation of a membership-check heuristic,
+not something worth building a calculator into for a demo-scale eval.
+
+**Verified against several real exception types, not just the one the
+tool set was designed around**: GST_REG_MISMATCH, DUPLICATE_INVOICE,
+VENDOR_BLOCKED, and QTY_EXCEEDS_GR on a genuinely ambiguous goods-receipt
+history. In every case the agent picked 1-2 tools purposefully (not all
+5 reflexively) and produced a grounded, specific, actionable explanation --
+see `docs/design_decisions.md` for how the QTY_EXCEEDS_GR case specifically
+is the one piece of real evidence that this needed to be an agent rather
+than a fixed workflow.
+
 Also fixed along the way (scenario-generator bugs, not validator bugs):
 `finalize()` defaulted every invoice to "SGD" regardless of the referenced
 PO's actual currency, so any generic scenario that happened to draw a line
