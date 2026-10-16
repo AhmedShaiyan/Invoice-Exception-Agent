@@ -18,12 +18,15 @@ CURRENCY_MISMATCH = "CURRENCY_MISMATCH"
 DUPLICATE_INVOICE = "DUPLICATE_INVOICE"
 NEAR_DUPLICATE_INVOICE = "NEAR_DUPLICATE_INVOICE"
 CREDIT_NOTE_UNSUPPORTED = "CREDIT_NOTE_UNSUPPORTED"
+EXTRACTION_FAILED = "EXTRACTION_FAILED"
+LOW_CONFIDENCE_EXTRACTION = "LOW_CONFIDENCE_EXTRACTION"
 
 ALL_CODES = [
     PO_NOT_FOUND, VENDOR_NOT_FOUND, VENDOR_BLOCKED, PRICE_VARIANCE,
     PRICE_UNIT_MISMATCH, QTY_EXCEEDS_GR, UOM_MISMATCH, LINE_NOT_ON_PO,
     GST_RATE_INVALID, GST_REG_MISMATCH, TOTAL_MISMATCH, CURRENCY_MISMATCH,
     DUPLICATE_INVOICE, NEAR_DUPLICATE_INVOICE, CREDIT_NOTE_UNSUPPORTED,
+    EXTRACTION_FAILED, LOW_CONFIDENCE_EXTRACTION,
 ]
 
 DESCRIPTIONS = {
@@ -42,4 +45,6 @@ DESCRIPTIONS = {
     DUPLICATE_INVOICE: "Same vendor + same invoice number already posted (RBKP.xblnr match).",
     NEAR_DUPLICATE_INVOICE: "Same vendor + an invoice number that's a near-match (reformatting, not a new invoice) of one already posted.",
     CREDIT_NOTE_UNSUPPORTED: "Document is a credit note; this pipeline only handles standard invoices, routes to review rather than guessing a netting treatment.",
+    EXTRACTION_FAILED: "Claude could not produce schema-valid structured output after retries; routed to review rather than guessing or crashing.",
+    LOW_CONFIDENCE_EXTRACTION: "Claude's own self-reported confidence on one or more fields fell below the review threshold.",
 }

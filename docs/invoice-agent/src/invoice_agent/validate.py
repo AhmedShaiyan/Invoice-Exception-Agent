@@ -233,7 +233,11 @@ class Validator:
                 flag(C.PRICE_VARIANCE, invoiced_price=line["unit_price"], po_unit_price=str(true_price),
                      variance_pct=str(round2(price_diff / true_price * 100)) if true_price else None)
 
-        if line.get("unit") and ekpo.get("meins") and line["unit"] != ekpo["meins"]:
+        # Case-insensitive: a real extraction pipeline can transcribe a unit
+        # in a different case than SAP's convention (confirmed live -- a
+        # scanned invoice's "box" came back lowercase against EKPO's "BOX")
+        # without that being a genuine unit-of-measure problem.
+        if line.get("unit") and ekpo.get("meins") and line["unit"].upper() != ekpo["meins"].upper():
             flag(C.UOM_MISMATCH, invoiced_unit=line["unit"], po_unit=ekpo["meins"])
 
         if ekpo.get("is_service") != "X":
