@@ -35,7 +35,7 @@ SYSTEM_PROMPT = """You are investigating a vendor invoice that a deterministic v
 
 You will be told the invoice's extracted fields and which exception code(s) were raised (e.g. PRICE_VARIANCE, QTY_EXCEEDS_GR, GST_REG_MISMATCH). Use the tools to look up the relevant PO, goods receipt, invoice history, and vendor master data, and form a grounded explanation: was the wrong PO quoted? Was a goods receipt posted late, or not yet at all? Is this a resubmission of an earlier invoice? Does the vendor's own master data disagree with what's printed on the invoice?
 
-Hard rule: only state a number or fact in your final explanation if a tool call actually returned it to you. Do not estimate, round, or recall a figure from general knowledge -- if you need a number, call a tool to get it. An explanation containing a number you never looked up is a failure of this task, not a stylistic issue.
+Hard rule: only state a number or fact in your final explanation if a tool call actually returned it to you, or it was printed on the invoice itself. Do not estimate, round, or recall a figure from general knowledge -- if you need a number, call a tool to get it. This includes facts you believe are generally true, like "the current GST rate is 9%" or "the rate changed on 1 January 2024" -- even if correct, stating them without a tool call to back them up is still a failure of this task, not a stylistic issue, because nothing in this system has actually verified them for this invoice. If a claim like that matters to your explanation, note that it wasn't independently verified rather than asserting it as fact.
 
 You have a limited number of tool calls. Use them purposefully -- look up what's actually relevant to the specific exception code(s) raised, not every tool reflexively. When you have enough to explain the root cause, stop calling tools and say so.
 
@@ -66,6 +66,7 @@ class InvestigationOutcome:
     tool_calls: list = field(default_factory=list)   # list of dicts (ToolCallLog.__dict__)
     model: str = MODEL
     error: Optional[str] = None
+    usage: Optional[dict] = None     # summed input/output tokens across every API call made
 
     def to_dict(self) -> dict:
         return asdict(self)
@@ -213,6 +214,13 @@ class Investigator:
         )
         messages = [{"role": "user", "content": user_brief}]
         capped = False
+        usage_totals = {"input_tokens": 0, "output_tokens": 0}
+
+        def _accumulate(resp):
+            u = getattr(resp, "usage", None)
+            if u is not None:
+                usage_totals["input_tokens"] += u.input_tokens
+                usage_totals["output_tokens"] += u.output_tokens
 
         try:
             while True:
@@ -220,6 +228,7 @@ class Investigator:
                     model=MODEL, max_tokens=2048, system=SYSTEM_PROMPT,
                     tools=TOOLS, messages=messages,
                 )
+                _accumulate(response)
                 if response.stop_reason != "tool_use":
                     break
 
@@ -258,20 +267,22 @@ class Investigator:
                 thinking={"type": "disabled"},
                 messages=report_messages, output_format=InvestigationResult,
             )
+            _accumulate(report)
             result = report.parsed_output
             return InvestigationOutcome(
                 status="capped" if capped else "ok",
                 root_cause=result.root_cause, explanation=result.explanation,
                 suggested_action=result.suggested_action, confidence=result.confidence,
-                tool_calls=[asdict(t) for t in tool_calls], model=MODEL,
+                tool_calls=[asdict(t) for t in tool_calls], model=MODEL, usage=usage_totals,
             )
         except Exception as e:   # noqa: BLE001 -- never let an investigation crash the pipeline
             return InvestigationOutcome(status="failed", error=f"{type(e).__name__}: {e}",
-                                         tool_calls=[asdict(t) for t in tool_calls], model=MODEL)
+                                         tool_calls=[asdict(t) for t in tool_calls], model=MODEL,
+                                         usage=usage_totals)
 
 
 def groundedness_check(explanation: str, tool_calls: list, invoice_fields: dict = None) -> dict:
-    """Heuristic check for section 6's eval: extract every number-looking
+    r"""Heuristic check for section 6's eval: extract every number-looking
     token in the explanation and confirm it appears somewhere in either the
     tool outputs or the invoice's own fields (the agent is explicitly
     allowed to restate what's printed on the invoice -- the system prompt's
@@ -281,14 +292,24 @@ def groundedness_check(explanation: str, tool_calls: list, invoice_fields: dict 
     wrong context, or a legitimate arithmetic derivative like "94 - 56 = 38"
     won't match this check even though it's a valid computation over
     grounded facts) -- but it catches the failure mode that matters most: a
-    figure that appears nowhere in anything the agent was given or looked up."""
+    figure that appears nowhere in anything the agent was given or looked up.
+
+    Numbers are extracted with a trailing "." stripped (`re.findall` on
+    r"\d[\d,]*\.?\d*" otherwise swallows an ordinary sentence-ending period
+    into the match, e.g. "...quantity of 4." -> "4." -- which then never
+    equals the grounded "4" even though the digit itself is fine. Caught
+    live in section 6's eval run: see docs/decisions_log.md section 6."""
     import re
-    numbers_in_explanation = set(re.findall(r"\d[\d,]*\.?\d*", explanation))
+
+    def extract(text):
+        return {n.rstrip(".") for n in re.findall(r"\d[\d,]*\.?\d*", text)}
+
+    numbers_in_explanation = extract(explanation)
     numbers_in_evidence = set()
     for call in tool_calls:
-        numbers_in_evidence.update(re.findall(r"\d[\d,]*\.?\d*", json.dumps(call.get("output", call))))
+        numbers_in_evidence.update(extract(json.dumps(call.get("output", call))))
     if invoice_fields is not None:
-        numbers_in_evidence.update(re.findall(r"\d[\d,]*\.?\d*", json.dumps(invoice_fields)))
+        numbers_in_evidence.update(extract(json.dumps(invoice_fields)))
     ungrounded = {n for n in numbers_in_explanation if n.replace(",", "") not in
                   {e.replace(",", "") for e in numbers_in_evidence}}
     return {"grounded": len(ungrounded) == 0, "ungrounded_numbers": sorted(ungrounded)}

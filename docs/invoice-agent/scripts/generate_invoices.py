@@ -337,7 +337,12 @@ def render_minimal(c, inv):
     c.drawString(15 * mm, y, "-" * 92)
     for ln in inv["lines"]:
         y -= 6 * mm
-        c.drawString(15 * mm, y, f"{ln['description'][:40]:<40} {ln['quantity']:>5} x {money(ln['unit_price']):>10} = {money(ln['amount']):>12}")
+        # Quantity is always paired with its unit on a real invoice -- this
+        # layout omitted it entirely until section 6's eval caught Claude
+        # inferring a unit from the description text instead (producing a
+        # spurious UOM_MISMATCH on a non-"EA" material). See
+        # docs/decisions_log.md section 6.
+        c.drawString(15 * mm, y, f"{ln['description'][:40]:<40} {ln['quantity']:>5} {ln['unit']:<5} x {money(ln['unit_price']):>10} = {money(ln['amount']):>12}")
     y -= 6 * mm
     c.drawString(15 * mm, y, "-" * 92)
     c.drawString(15 * mm, y - 6 * mm, f"{'Sub-total':<64}{money(inv['subtotal']):>12}")

@@ -10,6 +10,7 @@ the cumulative quantity check are both only correct if the engine has
 already processed what came before. `validate_batch` makes this harder to
 get wrong by doing the sort for you.
 """
+import re
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -37,6 +38,23 @@ GST_ROUNDING_TOLERANCE_PER_LINE = D("0.01")
 GST_ROUNDING_TOLERANCE_MIN = D("0.02")
 DESCRIPTION_MATCH_SCORE = 85           # see docs/design_decisions.md "Line matching"
 PRICE_PLAUSIBILITY_BAND = D("0.5")     # sanity check only, not the +/-1% tolerance itself
+
+# Some layouts print the PO number with a leading "PO"/"P.O."/"PO#"/"PO:"
+# baked into the value itself (e.g. the "minimal" layout's literal
+# "Order Ref : PO 4500012170" -- other layouts keep the printed value clean
+# and put "PO" only in a separate label). Extraction faithfully transcribes
+# exactly what's printed, which is correct per extract.py's own system
+# prompt -- the normalization belongs here, in the deterministic matching
+# layer, not in the LLM prompt. Found live during section 6's eval run
+# (INV_008_TAN-2607-1826.pdf, a clean invoice spuriously flagged
+# PO_NOT_FOUND) -- see docs/decisions_log.md section 6.
+_PO_PREFIX_RE = re.compile(r"^\s*p\.?\s*o\.?\s*#?\s*:?\s*", re.IGNORECASE)
+
+
+def _normalize_po(raw) -> str:
+    if not raw:
+        return raw
+    return _PO_PREFIX_RE.sub("", raw).strip()
 
 
 @dataclass
@@ -74,7 +92,7 @@ class Validator:
             codes.add(code)
             details.setdefault(code, []).append(detail)
 
-        lines = fields["lines"]
+        lines = [dict(l, po_number=_normalize_po(l.get("po_number"))) for l in fields["lines"]]
 
         # --- credit note: short-circuit, this pipeline doesn't net credit
         # notes against anything, it routes them to a human. Checking first
@@ -101,7 +119,7 @@ class Validator:
         # --- PO existence + currency, per referenced PO ---
         referenced_pos = sorted({l["po_number"] for l in lines if l.get("po_number")})
         if not referenced_pos:
-            referenced_pos = [p for p in fields.get("po_number", "").split("/") if p]
+            referenced_pos = [_normalize_po(p) for p in fields.get("po_number", "").split("/") if p]
         valid_pos = []
         for ebeln in referenced_pos:
             head = self.sap.po_header.get(ebeln)
@@ -146,15 +164,21 @@ class Validator:
                  note="gst_amount inconsistent with subtotal x invoice's own claimed rate")
 
         # --- line-level matching + checks ---
-        # A line whose own po_number was already flagged PO_NOT_FOUND isn't
+        # A line whose referenced PO was already flagged PO_NOT_FOUND isn't
         # *also* "not on the PO" -- that's the same problem restated, not a
-        # second one. Only flag LINE_NOT_ON_PO when the line's PO reference
-        # is valid (or absent, e.g. an unreferenced freight line) but the
-        # specific line still can't be matched within it.
-        invalid_pos = {l["po_number"] for l in lines if l.get("po_number")} - set(valid_pos)
+        # second one. extract.py's schema has no per-line po_number field
+        # (several layouts never repeat the PO number per line, only once
+        # at header level -- see docs/design_decisions.md "Line matching"),
+        # so there's no way to know, line by line, which of several
+        # referenced POs a given line belongs to. The only case this can
+        # unambiguously catch is "every referenced PO turned out to be
+        # invalid" -- then every line is unmatchable by definition, so skip
+        # matching entirely rather than also flagging LINE_NOT_ON_PO for the
+        # same root cause.
+        all_pos_invalid = bool(referenced_pos) and not valid_pos
         line_results = []
         for ln in lines:
-            if ln.get("po_number") in invalid_pos:
+            if all_pos_invalid:
                 line_results.append(LineResult(ln.get("description"), False))
                 continue
             lr = self._match_line(ln, valid_pos)
@@ -182,19 +206,51 @@ class Validator:
         # Post to the ledger so later invoices see this one -- unless it's a
         # duplicate, which never actually posts in a real system (see
         # Ledger.record_invoice docstring).
+        #
+        # Built from line_results' resolved ekpo (ebeln/ebelp), not the raw
+        # extracted line's own po_item/po_number: extract.py's schema has no
+        # per-line po_number at all, and po_item is frequently empty even
+        # when the line matched via material or description. Posting
+        # against the raw fields silently posted nothing for most real
+        # invoices -- found live in section 6's eval (a sequential-partial
+        # overshoot scenario that should have raised QTY_EXCEEDS_GR came
+        # back AUTO_APPROVE because the first invoice's quantity was never
+        # actually credited to the ledger). See docs/decisions_log.md
+        # section 6.
         if post and C.DUPLICATE_INVOICE not in codes:
-            self.ledger.record_invoice(lifnr, fields["invoice_number"], fields["invoice_date"], lines)
+            posting_lines = [{"po_number": lr.ekpo["ebeln"], "po_item": lr.ekpo["ebelp"],
+                               "quantity": ln["quantity"]}
+                              for ln, lr in zip(lines, line_results) if lr.matched]
+            self.ledger.record_invoice(lifnr, fields["invoice_number"], fields["invoice_date"], posting_lines)
 
         return ValidationResult(decision, sorted(codes), details, matched_vendor=lifnr,
                                  line_results=line_results)
 
     # ----------------------------------------------------------------- #
     def _match_line(self, line: dict, valid_pos: list) -> LineResult:
-        po_number, po_item = line.get("po_number"), line.get("po_item")
-        if po_number and po_item:
-            ekpo = self.sap.po_lines.get((po_number, po_item))
-            if ekpo:
-                return LineResult(line.get("description"), True, "po_item", ekpo)
+        # extract.py's schema has no per-line po_number field -- only
+        # ground_truth.json's synthetic test fixtures carry one (for
+        # scoring purposes). Use it directly when present and valid
+        # (unambiguous). When absent, as on every real extracted invoice,
+        # try po_item against every valid PO -- but only trust the result
+        # when exactly one valid PO contains that item number. Two
+        # referenced POs can legitimately share an item number (both use
+        # "00010" independently), and guessing wrong would credit the
+        # wrong PO's quantity ledger, so an ambiguous po_item falls through
+        # to the material/description match instead of picking arbitrarily.
+        # Found live in section 6's eval -- see docs/decisions_log.md
+        # section 6.
+        po_number, po_item = _normalize_po(line.get("po_number")), line.get("po_item")
+        if po_item:
+            if po_number and po_number in valid_pos:
+                ekpo = self.sap.po_lines.get((po_number, po_item))
+                if ekpo:
+                    return LineResult(line.get("description"), True, "po_item", ekpo)
+            elif not po_number:
+                matches = [ekpo for ebeln in valid_pos
+                           for ekpo in [self.sap.po_lines.get((ebeln, po_item))] if ekpo]
+                if len(matches) == 1:
+                    return LineResult(line.get("description"), True, "po_item", matches[0])
 
         candidates = [ekpo for ebeln in valid_pos for ekpo in self.sap.po_lines_by_po.get(ebeln, [])]
         material = line.get("material")

@@ -65,6 +65,86 @@ def base_invoice(**overrides):
     return fields
 
 
+# ===================================================== PO-number normalization
+@pytest.mark.parametrize("prefix", ["PO ", "PO#", "PO:", "P.O. ", "po "])
+def test_po_prefix_on_header_and_line_is_stripped_before_lookup(validator, prefix):
+    """Regression test for a real false rejection caught live in section 6's
+    eval run: the "minimal" layout literally prints "Order Ref : PO
+    4500012170" -- extraction faithfully transcribes that as po_number="PO
+    4500012170" (correct extraction behaviour per extract.py's system
+    prompt), which must still resolve to the real PO 4500012170, not
+    PO_NOT_FOUND."""
+    fields = base_invoice(po_number=f"{prefix}4500012001",
+                           lines=[dict(base_invoice()["lines"][0], po_number=f"{prefix}4500012001")])
+    result = validator.validate(fields)
+    assert result.decision == "AUTO_APPROVE"
+    assert result.exception_codes == []
+
+
+def test_po_number_without_prefix_still_works(validator):
+    """The common case -- most layouts never print a prefix at all -- must
+    be unaffected by the normalization."""
+    result = validator.validate(base_invoice())
+    assert result.decision == "AUTO_APPROVE"
+
+
+# ============================================= real-extraction-shaped lines
+def _without_line_po_number(fields):
+    """extract.py's ExtractedLine schema has no per-line po_number field --
+    only ground_truth.json's synthetic fixtures (and base_invoice() above)
+    carry one. Strip it to simulate what the validator actually receives
+    from a real pipeline run."""
+    return {**fields, "lines": [{k: v for k, v in ln.items() if k != "po_number"}
+                                 for ln in fields["lines"]]}
+
+
+def test_cumulative_qty_tracked_without_per_line_po_number(validator):
+    """Regression test for the real false approval caught live in section
+    6's eval run (INV_052_KAL-2607-1189.pdf, sequential_partial_2_of_2):
+    Ledger.record_invoice silently credited nothing against any PO line
+    because it only trusted a per-line po_number that real extraction never
+    provides, so a cumulative-quantity overshoot across two invoices was
+    never detected. Two invoices against the same line (28 then 31 of a PO
+    ordered for 199, all received) individually fit, but PO 4500012001's
+    line 00010 only has 199 - 170ish headroom in this fixture, so push the
+    combined total past what's actually been received."""
+    first = _without_line_po_number(base_invoice(invoice_number="SEQ-0001",
+                                                  lines=[{**base_invoice()["lines"][0], "quantity": 100,
+                                                          "amount": "680.00"}],
+                                                  subtotal="680.00", gst_amount="61.20", total="741.20"))
+    second = _without_line_po_number(base_invoice(invoice_number="SEQ-0002",
+                                                   lines=[{**base_invoice()["lines"][0], "quantity": 150,
+                                                           "amount": "1020.00"}],
+                                                   subtotal="1020.00", gst_amount="91.80", total="1111.80"))
+    r1 = validator.validate(first)
+    assert r1.decision == "AUTO_APPROVE"   # 100 of 199 available -- fits on its own
+    r2 = validator.validate(second)
+    # 100 + 150 = 250 > 199 received -- must be caught on the second invoice
+    assert r2.decision == "EXCEPTION"
+    assert C.QTY_EXCEEDS_GR in r2.exception_codes
+
+
+def test_multi_po_line_disambiguated_by_material_when_po_item_collides(validator):
+    """Two different POs can legitimately both use item number "00010".
+    Without a per-line po_number, po_item alone is ambiguous across POs --
+    must not silently guess one (which would credit the wrong PO's
+    quantity ledger) and must still resolve correctly via material/
+    description. Mirrors the real multi_po_clean regression this fix
+    caused and then fixed (docs/decisions_log.md section 6)."""
+    fields = base_invoice(
+        po_number="4500012001/4500012002",
+        lines=[
+            {"po_item": "00010", "material": "MAT-1001", "description": "A4 Copier Paper (500 sheets)",
+             "quantity": 5, "unit": "BOX", "unit_price": "6.80", "amount": "34.00"},
+        ],
+        subtotal="34.00", gst_amount="3.06", total="37.06",
+    )
+    fields = _without_line_po_number(fields)
+    result = validator.validate(fields)
+    assert result.line_results[0].matched is True
+    assert result.line_results[0].match_method in ("material", "description")
+
+
 # ============================================================ full dataset
 def test_full_dataset_matches_ground_truth():
     ground_truth = json.loads(GROUND_TRUTH_PATH.read_text())

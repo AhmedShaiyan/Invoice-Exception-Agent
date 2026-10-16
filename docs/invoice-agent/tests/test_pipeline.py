@@ -89,11 +89,17 @@ def test_extraction_failure_routes_to_exception_without_running_validator(monkey
                          ExtractionOutcome(status="failed", exception_code="EXTRACTION_FAILED", attempts=3))
     validator = MagicMock()
 
-    result = pipeline.process_invoice(fake_file, validator, MagicMock(), idempotency)
+    investigator = MagicMock()
+    result = pipeline.process_invoice(fake_file, validator, investigator, idempotency)
 
     assert result.decision == "EXCEPTION"
     assert result.exception_codes == ["EXTRACTION_FAILED"]
     validator.validate.assert_not_called()
+    # Regression guard: an extraction failure must not also trigger the
+    # investigation agent -- there are no fields to investigate, and this
+    # wasted real API spend in section 6's eval run before being fixed.
+    investigator.investigate.assert_not_called()
+    assert result.investigated is False
 
 
 # =============================================================== idempotency

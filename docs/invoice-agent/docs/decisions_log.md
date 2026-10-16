@@ -470,3 +470,173 @@ full Claude extraction -> validation -> agent investigation ->
 `ap.exceptions` path (`INV_002_PUN-2606-1315.pdf`, LINE_NOT_ON_PO, a
 grounded explanation citing the actual PO line and freight charge, stored
 correctly in both `ap.audit_log` and `ap.exceptions.explanation`).
+
+## Section 6 — Evaluation script and report
+
+**The eval makes real API calls against the whole dataset -- no mocking, no
+dry run as the deliverable.** `scripts/evaluate.py` runs every one of the
+217 invoices through the actual `process_invoice` pipeline: real Claude
+extraction for all 212 PDFs, real investigation-agent calls for every
+invoice that lands on EXCEPTION (~61 of them). A `--limit N` / `--resume` /
+`--no-investigate` set of flags exist purely for cheap dev iteration while
+building the scoring code itself -- the report that ships is always from a
+full, real run. Caught three genuine bugs this way that no amount of
+reading the code would have found, because all of them only exist at the
+seam between the LLM's actual output and the deterministic layer:
+
+**1. The "minimal" layout prints `"Order Ref : PO 4500012170"` -- a literal
+`"PO "` prefix baked into the PO-number value itself.** Extraction
+faithfully transcribed it as `po_number: "PO 4500012170"` (correct
+behaviour per `extract.py`'s own system prompt: transcribe exactly what's
+printed), and `validate.py`'s exact-dict-key PO lookup then failed to find
+it, flagging a clean invoice `PO_NOT_FOUND` + `LINE_NOT_ON_PO`. Every
+deterministic test up to this point (`test_validate.py`) fed
+ground_truth.json's *true* fields straight into the validator, bypassing
+extraction entirely -- this class of bug was structurally invisible to them.
+Fixed in `validate.py` with `_normalize_po()`, a regex that strips a
+leading `PO`/`P.O.`/`PO#`/`PO:` (case-insensitive) before any PO lookup,
+applied to both the header `po_number` and every line's `po_number`.
+Deliberately *not* fixed by telling the extraction prompt to strip the
+prefix -- CLAUDE.md's "extract literally, validate deterministically"
+split means this kind of vendor-formatting normalization belongs in the
+matching layer, not in LLM instructions.
+
+**2. The same layout never prints a unit of measure anywhere, for any
+line, on any of its 42 invoices.** `render_minimal`'s line format was
+`"{description} {qty} x {price} = {amount}"` -- no unit. `ExtractedLine.unit`
+has no default (unlike `po_item`/`material`, which are allowed to be `""`
+when genuinely absent), so the model had to supply *something*, and
+reasonably inferred one from the description text (e.g. "Managed Backup
+Storage (per TB-month)" -> `unit: "TB-month"`) when the true PO unit was
+just `"TB"` -- a spurious UOM_MISMATCH on an otherwise clean invoice. This
+isn't realistic: a real invoice always pairs a quantity with its unit
+("27 TB", not bare "27"). Fixed the generator itself, not the schema or the
+validator -- `render_minimal` now prints the unit next to the quantity, same
+as every other layout already does. Regenerated the full dataset
+(`random.seed(7)` plus confirming `render_minimal` makes no `random.*`
+calls meant `ground_truth.json` came back byte-identical -- verified with
+`git diff --stat`; only the 42 minimal-layout PDFs' visual content
+actually changed).
+
+**3. `groundedness_check`'s own number-extraction regex swallowed a
+sentence-ending period into the match.** "...the invoiced quantity of 4."
+extracted as the token `"4."`, which then never equalled the grounded `"4"`
+from a tool's quantity field -- a false positive in the *checker*, not a
+fabrication by the agent. Fixed by stripping a trailing `.` off every
+extracted number before comparing, with a regression test reproducing the
+exact sentence shape. Separately, the same pass over real explanations
+found one **genuine** grounding violation this checker is designed to
+catch: the agent twice volunteered "Singapore's GST rate moved to 9%
+effective 1 Jan 2024" -- true, but never returned by any tool call for that
+invoice, so it's background training knowledge presented as a verified
+fact. Strengthened `SYSTEM_PROMPT` in `agent.py` to call this out
+explicitly (a generally-true fact about tax rules/dates is still
+unverified for *this* invoice unless a tool actually confirmed it) rather
+than just leaving it as a known limitation.
+
+**Added token-usage tracking to `agent.py`'s `InvestigationOutcome`**
+(summed across every `messages.create`/`messages.parse` call in a single
+investigation) purely to support this section's cost-per-invoice number --
+`extract.py` already tracked usage, `agent.py` didn't.
+
+**One honest non-bug, kept in the report rather than quietly fixed away:**
+a clean "statement"-layout invoice occasionally comes back
+`LOW_CONFIDENCE_EXTRACTION` -- Claude's own self-reported confidence can
+legitimately dip below the 0.75 threshold on a document that turns out to
+be fine. That's the confidence gate doing exactly its job (ask a human
+rather than guess) on a genuinely borderline case, not a defect, and
+lowering the threshold to make the number look better would defeat the
+reason the gate exists. The report lists false rejections individually
+with their cause so this doesn't read as a mystery bug.
+
+**The full 217-invoice run hit a real-world operational limit: the
+Anthropic account ran out of credit partway through.** 143/217 extractions
+came back `EXTRACTION_FAILED` after invoice ~70, all with the same
+client-side error (`anthropic.Anthropic()` unable to resolve an API key) --
+confirmed separately afterward with a direct test call, which returned a
+clean `credit balance too low` 400. This is an account/billing fact, not a
+code bug, and is called out as such at the top of `docs/eval_report.md`
+rather than quietly re-run and hidden.
+
+**That run's single false approval led to the most serious bug found in
+this project.** `INV_052_KAL-2607-1189.pdf` (`sequential_partial_2_of_2`)
+should have raised QTY_EXCEEDS_GR -- a prior invoice against the same PO
+line, plus this one, together exceed what was actually received -- but came
+back AUTO_APPROVE. Root-caused for free, entirely locally (no API calls):
+replayed the two invoices' already-extracted fields through a fresh
+`Validator` and the bug reproduced immediately. `Ledger.record_invoice`
+only credits invoiced quantity when a line carries both `po_number` *and*
+`po_item`:
+
+```python
+if ln.get("po_item") and ln.get("po_number"):
+    self.invoiced_qty[(ln["po_number"], ln["po_item"])] += D(ln["quantity"])
+```
+
+But `extract.py`'s `ExtractedLine` schema **has no per-line `po_number`
+field at all** -- only `ground_truth.json`'s synthetic fixtures carry one,
+because `generate_invoices.py`'s `make_line()` attaches it for scoring
+purposes. Every real invoice that ever went through actual extraction
+therefore silently posted *nothing* to the quantity ledger, for its entire
+life -- `test_validate.py`'s 100%-match test never caught this because it
+feeds ground truth's fields straight into the validator, which structurally
+never exercises this path. The same wrong assumption showed up in two more
+places once I went looking: `_match_line`'s exact `(po_number, po_item)`
+lookup also never fired on real data (always fell through to the slower
+material/description fuzzy match), and the `invalid_pos` logic meant to
+prevent double-flagging `PO_NOT_FOUND` + `LINE_NOT_ON_PO` for the same root
+cause was dead code for the same reason.
+
+Fixed all three in `validate.py`:
+- `_match_line` now tries `po_item` against every currently-valid
+  referenced PO (not a `(po_number, po_item)` pair the line can never
+  supply) -- but **only trusts the result when exactly one valid PO
+  contains that item number**. This mattered immediately: fixing it naively
+  broke `INV_130_JUR-2609-1070.pdf` (`multi_po_clean`), where two different
+  POs both happen to use item `"00010"` for different materials -- guessing
+  either one would have credited the wrong PO's ledger. Ambiguous cases now
+  fall through to the material/description match instead.
+- The double-flag-prevention check now triggers on "every referenced PO
+  turned out invalid" (computable without per-line data) instead of a
+  per-line PO comparison that could never actually run.
+- The ledger-posting call now builds its posting list from
+  `line_results`' already-resolved `ekpo` (the real matched PO line), not
+  the raw extracted line's own (frequently absent) `po_item`/`po_number`.
+
+Verified for free, twice: (1) two new unit tests
+(`test_cumulative_qty_tracked_without_per_line_po_number`,
+`test_multi_po_line_disambiguated_by_material_when_po_item_collides`) using
+line shapes that match what real extraction actually produces, not
+`ground_truth.json`'s synthetic shape; (2) replayed every real
+`extracted_json` already sitting in `ap.invoices` from the credit-exhausted
+run through the fixed validator (74 invoices had extracted successfully
+before credit ran out) -- **0 false approvals** (was 1) and QTY_EXCEEDS_GR
+went from 2 TP / 10 FN to a clean 5 TP / 0 FN / 0 FP. All 67 tests still
+pass, including the full-dataset 100%-match test (which, tellingly, would
+never have caught this bug in the first place).
+
+**Also fixed in `pipeline.py`:** the investigation agent was running on
+`EXTRACTION_FAILED` invoices too -- `decision == "EXCEPTION"` is also true
+when extraction itself failed, and the investigation trigger didn't
+distinguish that from a real validation failure. There is nothing to
+investigate when there are no extracted fields (CLAUDE.md scopes the agent
+to invoices that failed *validation*), so this was pure wasted API spend --
+every one of the 143 extraction failures in the credit-exhausted run also
+triggered a full, pointless investigation call, which very likely
+contributed to the credit running out as early as it did. Fixed with a
+`validation is not None` guard; regression test added
+(`investigator.investigate.assert_not_called()` on an extraction failure).
+
+**Also found, not yet fixed (real but lower-severity):** on the 74
+successfully-extracted invoices, `CURRENCY_MISMATCH` had 2 false positives,
+both on the dataset's one USD-denominated vendor -- Claude extracted
+`"SGD"` instead of `"USD"` for both. Likely the model defaulting to the
+dataset's overwhelmingly dominant currency rather than a validator bug;
+needs a look at the actual rendered PDF before deciding whether this is a
+prompt fix or a generator-legibility issue. Left as an open item rather
+than guessed at under time/credit pressure.
+
+**Next step, once the account has credit again:** re-run
+`python scripts/evaluate.py` (no flags -- a full, fresh 217-invoice run) and
+replace the stale report. Everything above was verified against real data
+without spending anything further.

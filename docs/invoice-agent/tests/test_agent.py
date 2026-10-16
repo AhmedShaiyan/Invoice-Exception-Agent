@@ -143,6 +143,37 @@ def test_hard_cap_never_executes_more_than_max_tool_calls(investigator):
     assert call_counter["n"] <= investigator.max_tool_calls + 1
 
 
+def test_usage_is_summed_across_every_api_call(investigator):
+    """Needed for section 6's per-invoice cost accounting -- a single
+    investigation can make several tool-use turns plus the final report
+    call, and the cost is the sum across all of them, not just the last
+    response's usage."""
+    investigator.max_tool_calls = 5
+    call_counter = {"n": 0}
+
+    def fake_create(**kwargs):
+        call_counter["n"] += 1
+        if call_counter["n"] == 1:
+            resp = _tool_use_response("get_vendor_master", {"vendor_name": "Lion City Office Supplies Pte Ltd"},
+                                       "call_1")
+        else:
+            resp = SimpleNamespace(stop_reason="end_turn", content=[])
+        resp.usage = SimpleNamespace(input_tokens=100, output_tokens=20)
+        return resp
+
+    fake_report = SimpleNamespace(
+        parsed_output=InvestigationResult(root_cause="t", explanation="t", suggested_action="t", confidence=0.5),
+        usage=SimpleNamespace(input_tokens=50, output_tokens=10),
+    )
+    investigator.client.messages.create = MagicMock(side_effect=fake_create)
+    investigator.client.messages.parse = MagicMock(return_value=fake_report)
+
+    outcome = investigator.investigate({"invoice_number": "X"}, ["PRICE_VARIANCE"])
+
+    # 2 messages.create calls (tool_use, then end_turn) + 1 messages.parse call
+    assert outcome.usage == {"input_tokens": 100 + 100 + 50, "output_tokens": 20 + 20 + 10}
+
+
 def test_agent_never_exposes_an_approve_or_reject_tool():
     """Structural guarantee, not a behavioral one: the capability simply
     isn't offered, so there's nothing for a prompt-injection or a model
@@ -164,6 +195,17 @@ def test_groundedness_check_flags_fabricated_number():
 def test_groundedness_check_passes_for_cited_tool_output():
     explanation = "The vendor's GST registration on file is 201812345K."
     tool_calls = [{"tool_name": "get_vendor_master", "output": {"gst_reg_no": "201812345K"}}]
+    result = groundedness_check(explanation, tool_calls)
+    assert result["grounded"] is True
+
+
+def test_groundedness_check_ignores_trailing_sentence_period():
+    """Regression test for a false positive caught live in section 6's eval
+    run: "...the invoiced quantity of 4." extracted as "4." (with the
+    sentence-ending period attached), which then never matched the
+    grounded "4" from a tool's quantity field."""
+    explanation = "The goods receipt confirms the invoiced quantity of 4."
+    tool_calls = [{"tool_name": "get_po_history", "output": {"cumulative_received_qty": "4"}}]
     result = groundedness_check(explanation, tool_calls)
     assert result["grounded"] is True
 
