@@ -222,10 +222,24 @@ class Investigator:
                 usage_totals["input_tokens"] += u.input_tokens
                 usage_totals["output_tokens"] += u.output_tokens
 
+        # Prompt caching: system+tools are byte-identical on every call this
+        # method makes (every turn of this investigation, and every other
+        # invoice's investigation in the same run) -- render order is
+        # tools -> system -> messages, so a breakpoint on the last system
+        # block caches both together. Within one investigation this means
+        # turns 2+ don't re-bill the ~1-2K token tool schema set; across
+        # investigations in the same eval run it means only the first one
+        # pays the cache-write cost (5-minute TTL) for the rest. See
+        # docs/decisions_log.md section 6 -- this was identified as the
+        # likely-largest fixable cost driver after the eval burned real
+        # money without it.
+        cached_system = [{"type": "text", "text": SYSTEM_PROMPT,
+                           "cache_control": {"type": "ephemeral"}}]
+
         try:
             while True:
                 response = self.client.messages.create(
-                    model=MODEL, max_tokens=2048, system=SYSTEM_PROMPT,
+                    model=MODEL, max_tokens=2048, system=cached_system,
                     tools=TOOLS, messages=messages,
                 )
                 _accumulate(response)
@@ -263,7 +277,7 @@ class Investigator:
             # thinking alone, leaving nothing for the actual structured
             # output (stop_reason: max_tokens, parsed_output: None).
             report = self.client.messages.parse(
-                model=MODEL, max_tokens=2048, system=SYSTEM_PROMPT,
+                model=MODEL, max_tokens=2048, system=cached_system,
                 thinking={"type": "disabled"},
                 messages=report_messages, output_format=InvestigationResult,
             )

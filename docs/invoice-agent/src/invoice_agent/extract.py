@@ -129,13 +129,32 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
     client = client or anthropic.Anthropic()
     b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
     last_error = None
+    # SYSTEM_PROMPT is byte-identical across all 217 invoices in a run --
+    # caching it means only the first extraction call in a run pays full
+    # price for this portion (5-minute TTL), the rest read it at ~0.1x. See
+    # agent.py's investigate() for the matching fix and
+    # docs/decisions_log.md section 6 for why this mattered.
+    cached_system = [{"type": "text", "text": SYSTEM_PROMPT,
+                       "cache_control": {"type": "ephemeral"}}]
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             response = client.messages.parse(
                 model=MODEL,
                 max_tokens=4096,
-                system=SYSTEM_PROMPT,
+                system=cached_system,
+                # Sonnet 5 has adaptive thinking on by default even when
+                # this parameter is omitted entirely -- confirmed live in
+                # section 4 (it once consumed an entire max_tokens budget
+                # on its own, see agent.py's final-report call). Extraction
+                # is a bounded field-pulling task, not multi-step reasoning,
+                # and it runs on every single invoice (unlike the
+                # investigation agent, which only runs on the minority that
+                # fail validation) -- disabling it here is the highest-
+                # leverage cost fix in the whole pipeline. Section 6's eval
+                # run burned real money without this disabled; see
+                # docs/decisions_log.md section 6.
+                thinking={"type": "disabled"},
                 messages=[{
                     "role": "user",
                     "content": [

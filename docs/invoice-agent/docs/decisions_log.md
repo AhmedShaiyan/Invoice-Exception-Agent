@@ -640,3 +640,48 @@ than guessed at under time/credit pressure.
 `python scripts/evaluate.py` (no flags -- a full, fresh 217-invoice run) and
 replace the stale report. Everything above was verified against real data
 without spending anything further.
+
+**Cost follow-up: the credit burn was worse than it needed to be, and most
+of the waste was fixable without spending anything to confirm it.** Broke
+down the $3.27 the credit-exhausted run actually spent: $1.25 across 69
+real extraction calls, **$2.02 across only 23 real investigation calls**
+(the rest of the 167 "investigated" rows cost $0 because they failed
+instantly once the account was out of credit -- not because the
+investigation-on-extraction-failure bug was cheap; that bug just happened
+to fail for free here). Per-call, investigation averaged ~5x more
+expensive than extraction despite running on roughly a third as many
+invoices -- it's the dominant cost center, not extraction.
+
+Two more fixes, both applied without spending anything further to verify
+(they're well-documented API behavior, not something that needed a live
+test to confirm was *correct*, only to confirm the exact dollar saving):
+
+1. **Disabled thinking for extraction** (`extract.py`). Same root cause as
+   the agent.py bug already fixed in section 4 -- Sonnet 5 has adaptive
+   thinking on by default even when the parameter is omitted entirely.
+   Extraction is a bounded field-pulling task, not multi-step reasoning,
+   and it runs unconditionally on every one of the 217 invoices (vs.
+   investigation's ~61) -- leaving thinking on here was paying for
+   reasoning depth a structured-extraction call shouldn't need.
+2. **Added prompt caching** (`cache_control` on the system block) to both
+   `extract.py`'s and `agent.py`'s system prompts. Both are byte-identical
+   across every call of their kind in a run -- extraction's system prompt
+   is the same for all 217 invoices, and the investigation agent's is the
+   same across every turn of every investigation. Caching means only the
+   *first* call in a run pays full price for that prefix; every later one
+   reads it at roughly a tenth of the cost (5-minute TTL -- investigations
+   in particular run close together, so this should stay warm for the
+   whole eval run). Deliberately did **not** attempt to also cache the
+   investigation loop's growing tool-result history (the bigger
+   theoretical win, since each of up to 6 tool-use turns currently resends
+   the entire prior conversation) -- that requires mutating or rebuilding
+   SDK response content blocks to attach `cache_control`, which isn't
+   documented cleanly enough to get right without a live call to verify,
+   and risking a correctness bug in the one piece of this project that
+   makes real tool-calling decisions was not worth it under "fix the cost
+   problem, don't spend more to test the fix." Left as a known, bounded
+   follow-up.
+
+Not yet re-verified with a real run (no credit) -- the fixes are applied
+and tested for correctness (full suite green), but the actual dollar
+savings can only be confirmed once `scripts/evaluate.py` runs again.
