@@ -24,9 +24,18 @@ from pydantic import BaseModel, Field, ValidationError
 from . import codes as C
 from .money import D
 
-MODEL = "claude-sonnet-5"
+MODEL = "claude-haiku-4-5"
 MAX_RETRIES = 3
 CONFIDENCE_THRESHOLD = 0.75
+# Extraction is a bounded, well-specified structured-output read of a
+# document -- not multi-step reasoning -- and it runs on every single
+# invoice, unlike the investigation agent (agent.py), which only runs on
+# the minority that fail validation and stays on Sonnet 5 for explanation
+# quality. Haiku 4.5 is ~3x cheaper per token and supports both vision and
+# structured outputs. Section 6's eval already measures extraction
+# accuracy by layout (including scans separately), so any real accuracy
+# regression on harder documents will show up there, not be assumed away.
+# See docs/decisions_log.md section 6.
 
 SYSTEM_PROMPT = """You are extracting structured data from a vendor invoice document for an accounts-payable system.
 
@@ -129,32 +138,32 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
     client = client or anthropic.Anthropic()
     b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
     last_error = None
-    # SYSTEM_PROMPT is byte-identical across all 217 invoices in a run --
-    # caching it means only the first extraction call in a run pays full
-    # price for this portion (5-minute TTL), the rest read it at ~0.1x. See
-    # agent.py's investigate() for the matching fix and
-    # docs/decisions_log.md section 6 for why this mattered.
-    cached_system = [{"type": "text", "text": SYSTEM_PROMPT,
-                       "cache_control": {"type": "ephemeral"}}]
+    # Prompt caching was tried here (SYSTEM_PROMPT is byte-identical across
+    # all 217 invoices in a run) and deliberately dropped after switching
+    # to Haiku 4.5: Haiku's minimum cacheable prefix is 4096 tokens, and
+    # this prompt is only ~500 -- a cache_control marker here would be a
+    # permanent, silent no-op (cache_creation_input_tokens always 0). On
+    # Sonnet 5/Opus 5 (min. 512-1024 tokens) it would have worked, which is
+    # exactly what's still done in agent.py's investigate() -- that call
+    # stayed on Sonnet 5. See docs/decisions_log.md section 6.
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             response = client.messages.parse(
                 model=MODEL,
                 max_tokens=4096,
-                system=cached_system,
-                # Sonnet 5 has adaptive thinking on by default even when
-                # this parameter is omitted entirely -- confirmed live in
-                # section 4 (it once consumed an entire max_tokens budget
-                # on its own, see agent.py's final-report call). Extraction
-                # is a bounded field-pulling task, not multi-step reasoning,
-                # and it runs on every single invoice (unlike the
-                # investigation agent, which only runs on the minority that
-                # fail validation) -- disabling it here is the highest-
-                # leverage cost fix in the whole pipeline. Section 6's eval
-                # run burned real money without this disabled; see
+                system=SYSTEM_PROMPT,
+                # No `thinking` param here, deliberately: Haiku 4.5 uses the
+                # older request scheme (thinking off by default when the
+                # param is omitted; `{"type": "disabled"}` is Sonnet
+                # 5/Opus 5-generation syntax and isn't guaranteed valid on
+                # Haiku -- not worth risking a 400 on every extraction call
+                # to express a state that's already the default here).
+                # This mirrors the same fix made when extraction was on
+                # Sonnet 5 (that model thinks by default even when omitted;
+                # see agent.py's investigate(), which stayed on Sonnet 5 and
+                # still needs the explicit disable). See
                 # docs/decisions_log.md section 6.
-                thinking={"type": "disabled"},
                 messages=[{
                     "role": "user",
                     "content": [

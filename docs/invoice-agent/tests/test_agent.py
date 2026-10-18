@@ -34,13 +34,18 @@ def investigator():
 
 # ================================================================= tools
 def test_search_pos_by_vendor_known_vendor(investigator):
+    """Summary only -- price/qty/unit are deliberately excluded (get full
+    detail via get_po_history once a specific line is identified). See the
+    tool's own docstring for why: this was the single largest tool payload
+    in the loop, resent in full on every subsequent turn."""
     result = investigator._tool_search_pos_by_vendor("Lion City Office Supplies Pte Ltd")
     assert "error" not in result
     assert result["vendor"] == "Lion City Office Supplies Pte Ltd"
     assert len(result["purchase_orders"]) > 0
     first_po = result["purchase_orders"][0]
     assert "ebeln" in first_po and "lines" in first_po
-    assert all("material" in ln and "netpr" in ln for ln in first_po["lines"])
+    assert all("ebelp" in ln and "material" in ln and "description" in ln for ln in first_po["lines"])
+    assert all("netpr" not in ln and "order_qty" not in ln for ln in first_po["lines"])
 
 
 def test_search_pos_by_vendor_unknown_vendor_returns_error(investigator):

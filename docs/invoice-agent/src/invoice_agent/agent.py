@@ -76,7 +76,7 @@ class InvestigationOutcome:
 TOOLS = [
     {
         "name": "search_pos_by_vendor",
-        "description": "Find a vendor by name and list their purchase orders, each with a summary of its line items (material, description, quantity, unit, price, price unit, whether it's a service line).",
+        "description": "Find a vendor by name and list their purchase orders, each with a short summary of its line items (PO line number, material, description) -- enough to identify which PO/line is relevant. Does not include price, quantity, or unit; call get_po_history on the specific line once identified for that detail.",
         "input_schema": {"type": "object", "properties": {
             "vendor_name": {"type": "string", "description": "Vendor name as printed on the invoice."}},
             "required": ["vendor_name"], "additionalProperties": False},
@@ -135,6 +135,17 @@ class Investigator:
 
     # ------------------------------------------------------------- tools
     def _tool_search_pos_by_vendor(self, vendor_name: str) -> dict:
+        """Summary only -- ebelp/material/description, just enough to pick
+        the right PO/line. Price, quantity, unit, and service-flag are
+        deliberately omitted: get_po_history returns full detail on one
+        specific line once it's identified, and dumping that detail for
+        every line of every PO this vendor has ever placed (one real vendor
+        in the dataset has 22 POs) made this the single largest tool
+        payload in the loop by a wide margin -- it then gets resent in full
+        on every subsequent turn of the conversation, which is the actual
+        reason investigation calls cost far more per call than extraction.
+        Found live in section 6's eval cost breakdown -- see
+        docs/decisions_log.md section 6."""
         lifnr = self.sap.find_vendor_by_name(vendor_name)
         if lifnr is None:
             return {"error": f"No vendor found matching '{vendor_name}'"}
@@ -142,9 +153,7 @@ class Investigator:
         for ebeln, head in self.sap.po_header.items():
             if head["lifnr"] != lifnr:
                 continue
-            lines = [{"ebelp": ln["ebelp"], "material": ln["matnr"], "description": ln["txz01"],
-                      "order_qty": ln["menge"], "unit": ln["meins"], "netpr": ln["netpr"],
-                      "peinh": ln["peinh"], "is_service": ln["is_service"] == "X"}
+            lines = [{"ebelp": ln["ebelp"], "material": ln["matnr"], "description": ln["txz01"]}
                      for ln in self.sap.po_lines_by_po.get(ebeln, [])]
             pos.append({"ebeln": ebeln, "po_date": head["bedat"], "currency": head["waers"], "lines": lines})
         return {"vendor": self.sap.vendors[lifnr]["name1"], "purchase_orders": pos}

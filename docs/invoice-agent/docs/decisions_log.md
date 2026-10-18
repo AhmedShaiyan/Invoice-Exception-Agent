@@ -685,3 +685,55 @@ test to confirm was *correct*, only to confirm the exact dollar saving):
 Not yet re-verified with a real run (no credit) -- the fixes are applied
 and tested for correctness (full suite green), but the actual dollar
 savings can only be confirmed once `scripts/evaluate.py` runs again.
+
+**Follow-up, same session: two more cost fixes, plus a correction to one
+of the above.**
+
+1. **Extraction moved to Haiku 4.5, investigation stayed on Sonnet 5 --
+   deliberately split, not a blanket downgrade.** Extraction is bounded
+   field-pulling on a document (not reasoning) and runs on every single
+   invoice; investigation decides which tools to call and writes the
+   explanation a human reviewer actually reads, and only runs on the ~28%
+   of invoices that fail validation. Haiku 4.5 is ~3x cheaper per token and
+   supports both vision and structured outputs, so the volume step moves;
+   the judgment step doesn't, since any accuracy loss there would show up
+   as a visibly weaker centerpiece for a small absolute saving (investigation
+   is already low-volume). Section 6's eval already scores extraction
+   accuracy by layout (scans counted separately), so a real regression on
+   harder documents will be visible, not assumed away.
+
+2. **Trimmed `search_pos_by_vendor`'s tool output** (`agent.py`) -- it was
+   returning every PO a vendor has ever placed with every line's full
+   detail (price, qty, unit, price unit, service flag): one real vendor in
+   the dataset has 22 POs, and that single tool call's JSON output
+   measured 9,057 characters (~2,264 tokens) before the trim. This result
+   sits in the conversation and gets resent in full on every later turn of
+   that investigation, making it almost certainly the single largest
+   contributor to why investigation calls average ~5x the cost of
+   extraction calls (measured: $0.088/call vs $0.018/call in the
+   credit-exhausted run). Trimmed each line down to `ebelp`/`material`/
+   `description` -- just enough to identify which line is relevant;
+   `get_po_history` already returns full detail on one specific line once
+   identified, so nothing is lost, only deferred to a more targeted call.
+   Measured on the same 22-PO vendor: 9,057 -> 5,490 characters (~39%
+   smaller), a real but more modest cut than the per-field reduction alone
+   suggested -- JSON structure and field names still cost bytes regardless
+   of which fields are included.
+
+3. **Correction: the prompt-caching fix applied to `extract.py` earlier in
+   this section doesn't actually do anything on Haiku 4.5, and the comment
+   claiming it did was wrong.** Haiku 4.5's minimum cacheable prefix is
+   4096 tokens; `extract.py`'s `SYSTEM_PROMPT` is ~500. A `cache_control`
+   marker below the minimum is a silent no-op (no error, `usage.
+   cache_creation_input_tokens` stays 0 forever) -- caught by checking the
+   actual prompt length against the model's documented minimum rather than
+   assuming the fix worked because it was syntactically valid. Removed the
+   dead wrapper from `extract.py` rather than leave a comment overclaiming
+   a saving that isn't happening. `agent.py`'s investigate() keeps the
+   caching fix -- it's still on Sonnet 5 (512-1024 token minimum), and its
+   system+tools prefix is long enough to clear that bar.
+
+All changes verified by the full test suite (59 non-DB tests passing;
+Docker/Postgres was down at the time, unrelated to any of this). No
+further API calls made -- still waiting on credit to confirm the actual
+dollar numbers.
