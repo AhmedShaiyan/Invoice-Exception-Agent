@@ -152,9 +152,27 @@ def run_eval(resume: bool, limit: int, investigate: bool) -> list:
         conn.commit()
         already_done = set()
     else:
+        # Only a row whose extraction actually produced fields counts as
+        # "done" -- a prior run's EXTRACTION_FAILED rows have extracted_json
+        # = '{}' (see pipeline.py: fields=None on failure, inserted as {})
+        # and must be retried, not skipped. A naive "source_file already
+        # exists" check (what this looked like before being caught) would
+        # silently skip retrying every credit-exhaustion failure on
+        # --resume, defeating the entire point of resuming.
         with conn.cursor() as cur:
-            cur.execute("SELECT DISTINCT source_file FROM ap.invoices")
+            cur.execute("SELECT DISTINCT source_file FROM ap.invoices "
+                        "WHERE extracted_json IS NOT NULL AND extracted_json != '{}'::jsonb")
             already_done = {r[0] for r in cur.fetchall()}
+            # Delete stale failed rows for everything about to be retried --
+            # process_invoice always INSERTs a new row, so leaving the old
+            # failed one in place would double-count that file in scoring.
+            # psycopg3 note: a bare tuple does not adapt into SQL IN (...);
+            # = ANY(%s) with a list is the correct idiom here (confirmed
+            # live against the real DB -- a tuple + NOT IN raised a syntax
+            # error).
+            cur.execute("DELETE FROM ap.invoices WHERE NOT (source_file = ANY(%s))",
+                        (list(already_done),))
+        conn.commit()
 
     rows = []
     with tempfile.TemporaryDirectory() as tmp:
