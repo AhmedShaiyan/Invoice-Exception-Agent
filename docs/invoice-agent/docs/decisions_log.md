@@ -1017,3 +1017,79 @@ All 76 tests pass (70 -> 76: new coverage for `dashboard_stats`,
 function, including a regression test for the clock-mismatch bug
 above). No additional API spend this section -- every verification
 step used already-seeded data or the app's own free-to-render UI.
+
+## Section 8 — Deployment
+
+**Databricks Lakebase over Neon or SQLite, for the hosted database.**
+Lakebase is wire-compatible Postgres (confirmed live: `psql`/psycopg3
+connect with zero code changes, `schema.sql` runs unmodified), and
+Databricks Free Edition includes one Lakebase project permanently free
+with scale-to-zero compute and no credit card -- the same cost profile
+as Neon's free tier. Chosen over Neon specifically because the stated
+target audience (an enterprise AI team automating finance/ERP
+processes) is more likely to already run Databricks than a niche
+serverless-Postgres startup; a demo built on the platform a real
+interviewer's team might use is a stronger signal than one built on
+whichever free Postgres host required the least setup. SQLite was
+ruled out for the reason already on record in this project's known
+issues: it would mean a second code path (or a rewrite) away from the
+psycopg3 calls already written and tested, and loses the "this is how
+a real enterprise AP system would actually be deployed" framing for
+the stated audience. One disclosed trade-off for the README: Free
+Edition is explicitly scoped to personal/non-commercial use, which
+fits a portfolio demo but should be stated plainly, not glossed over.
+
+**A freshly-created Lakebase password role has `CREATEDB` but not
+`CREATE` on the shared default `databricks_postgres` database.**
+Running `schema.sql` against that default database failed with
+`InsufficientPrivilege: permission denied for database
+databricks_postgres` even with `CREATEDB`/`CREATEROLE` enabled on the
+role -- those attributes grant the *ability to create new databases*,
+not privileges inside the existing shared one. Rather than chase down
+a `GRANT CREATE ON DATABASE ... TO role` from an admin-authenticated
+session (which would need an interactive OAuth login I can't perform
+on the user's behalf), used the privilege the role already has:
+connected once with `autocommit=True` and ran `CREATE DATABASE
+invoice_agent`, then pointed `DATABASE_URL` at that new database
+instead of the shared default. The role owns it outright, so
+`schema.sql` ran clean. Documented in `.env.example` so a future
+re-deploy doesn't waste time rediscovering this.
+
+**Migrated the real 217-invoice eval history into Lakebase rather than
+starting the public demo from an empty database.** The section 6 run's
+results (`ap.invoices`, `ap.exceptions`, `ap.audit_log` -- 217/75/501
+rows) already exist, real, in the local docker-compose Postgres; a
+first-time visitor to the public demo seeing an empty dashboard would
+undersell work that's already done and already paid for, and
+re-running the pipeline against Lakebase to populate it would mean
+spending the ~$5 extraction/investigation cost a second time for
+output that's already sitting on disk. Wrote a one-off migration
+script (`INSERT` by explicit column list, preserving primary keys so
+`exceptions.invoice_id`/`audit_log.invoice_id` foreign keys still
+resolve, then `setval` on each sequence) -- pure database-to-database
+copy, zero LLM calls, zero additional cost. Deliberately did **not**
+copy `ap.api_usage`: that table is a live daily spend counter and the
+production deployment should start at zero real usage, not inherit
+local dev's. Two bugs surfaced and fixed while writing the migration,
+neither shipped:
+
+- psycopg3 returns `JSONB` columns as plain Python `dict`s on
+  `SELECT`, but does not auto-adapt a bare `dict` back to `jsonb` on
+  `INSERT` (`cannot adapt type 'dict'`) -- fixed by wrapping the three
+  JSONB-typed values (`extracted_json`, `detail`, `payload`) in
+  `psycopg.types.json.Jsonb(...)` before the `executemany`.
+- `load_dotenv()` with no explicit path resolves relative to wherever
+  the *script file* lives, not the shell's working directory -- the
+  migration script lived in a scratch directory outside the repo, so
+  it silently loaded nothing and `DATABASE_URL` came back missing.
+  Fixed by passing the `.env` path explicitly.
+
+**Verified the deployed data path end-to-end before touching Streamlit
+Cloud**, not just the raw tables: ran `db.py`'s actual app-facing
+functions (`dashboard_stats`, `list_invoices`, `get_invoice`,
+`get_exceptions`, `get_audit_trail`) against Lakebase directly, then
+launched the real Streamlit app locally with `DATABASE_URL` pointed at
+Lakebase and drove it with Playwright through the real password gate --
+confirmed the Dashboard, Exception Queue (71 awaiting review, matching
+local), and Audit Trail all render real data from the new database, not
+just that the tables have rows.
