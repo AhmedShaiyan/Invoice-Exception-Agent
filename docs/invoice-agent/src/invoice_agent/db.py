@@ -104,3 +104,76 @@ def get_audit_trail(conn, invoice_id: int) -> list:
             "WHERE invoice_id = %s ORDER BY created_at, id", (invoice_id,))
         cols = [d.name for d in cur.description]
         return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+# ======================================================== read queries (app)
+def _rows_as_dicts(cur) -> list:
+    cols = [d.name for d in cur.description]
+    return [dict(zip(cols, row)) for row in cur.fetchall()]
+
+
+def dashboard_stats(conn) -> dict:
+    with conn.cursor() as cur:
+        cur.execute("SELECT decision, count(*) FROM ap.invoices GROUP BY decision")
+        by_decision = dict(cur.fetchall())
+        cur.execute("SELECT count(*) FROM ap.invoices")
+        total = cur.fetchone()[0]
+    return {"total": total, "by_decision": by_decision}
+
+
+def list_invoices(conn, decision: str = None, limit: int = 300) -> list:
+    """Newest first. `decision` filters to one value (e.g. 'EXCEPTION');
+    omit for everything."""
+    with conn.cursor() as cur:
+        if decision:
+            cur.execute(
+                "SELECT id, source_file, vendor_name, invoice_number, invoice_date, total, "
+                "currency, decision, created_at FROM ap.invoices WHERE decision = %s "
+                "ORDER BY created_at DESC, id DESC LIMIT %s", (decision, limit))
+        else:
+            cur.execute(
+                "SELECT id, source_file, vendor_name, invoice_number, invoice_date, total, "
+                "currency, decision, created_at FROM ap.invoices "
+                "ORDER BY created_at DESC, id DESC LIMIT %s", (limit,))
+        return _rows_as_dicts(cur)
+
+
+def get_invoice(conn, invoice_id: int) -> dict:
+    with conn.cursor() as cur:
+        cur.execute("SELECT * FROM ap.invoices WHERE id = %s", (invoice_id,))
+        rows = _rows_as_dicts(cur)
+    return rows[0] if rows else None
+
+
+def get_exceptions(conn, invoice_id: int) -> list:
+    with conn.cursor() as cur:
+        cur.execute(
+            "SELECT id, code, severity, detail, explanation, suggested_action FROM ap.exceptions "
+            "WHERE invoice_id = %s ORDER BY severity DESC, code", (invoice_id,))
+        return _rows_as_dicts(cur)
+
+
+def try_consume_daily_quota(conn, daily_limit: int) -> tuple:
+    """Atomically increments today's shared usage counter (one row per
+    calendar day, UPSERT with RETURNING -- Postgres's row lock makes this
+    safe under concurrent requests, no separate locking needed) and
+    reports whether the caller is still within budget. Shared across every
+    visitor on purpose: a public deployment with no per-user accounts
+    needs one cap everyone draws from, not a per-session counter a
+    visitor could reset by reloading the page. Returns (allowed, count).
+
+    Uses Postgres's CURRENT_DATE, not Python's date.today(), so the write
+    path agrees with every read path (the Upload page's usage display,
+    this function's own callers) on what day it is. date.today() reads the
+    app server's local clock; CURRENT_DATE reads the DB server's -- mixing
+    the two let a row get written under one day and read back under
+    another whenever the two clocks' local dates disagreed (e.g. near
+    midnight UTC when the app server runs in a different timezone)."""
+    with conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO ap.api_usage (day, count) VALUES (CURRENT_DATE, 1) "
+            "ON CONFLICT (day) DO UPDATE SET count = ap.api_usage.count + 1 "
+            "RETURNING count")
+        count = cur.fetchone()[0]
+    conn.commit()
+    return count <= daily_limit, count

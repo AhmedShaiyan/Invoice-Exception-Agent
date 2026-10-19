@@ -131,3 +131,13 @@ CREATE TABLE IF NOT EXISTS ap.audit_log (
     model       TEXT,                           -- LLM model id, when an LLM was involved
     created_at  TIMESTAMPTZ DEFAULT now()
 );
+
+-- Shared daily API-spend cap for the Streamlit app's "upload your own
+-- invoice" feature (section 7/8) -- a public deployment with no per-user
+-- accounts needs one counter everyone draws from, not a per-session one
+-- a visitor could reset by reloading. One row per calendar day; see
+-- invoice_agent.db.try_consume_daily_quota for the atomic increment.
+CREATE TABLE IF NOT EXISTS ap.api_usage (
+    day    DATE PRIMARY KEY,
+    count  INT NOT NULL DEFAULT 0
+);

@@ -924,3 +924,96 @@ All 70 tests pass. Total spend across all of section 6, start to finish:
 roughly $5.30-5.50 (the $4.96-5.00 full run plus the ~13-invoice Haiku
 sample and the 3-invoice Sonnet confirmation sample that caught the
 scanned-document routing problem before it could affect the full run).
+
+## Section 7 — Streamlit app
+
+**Four pages, one entry point.** `app.py` (Dashboard: live stats from
+`ap.invoices`, the eval report embedded in an expander), plus
+`pages/1_Exception_Queue.py` (evidence side-by-side, agent findings, the
+one Approve/Reject surface in the whole app), `pages/2_Audit_Trail.py`
+(full per-invoice timeline, any invoice not just exceptions), and
+`pages/3_Upload_Invoice.py` (upload-and-process against the mock SAP
+data, the only page that spends real API money). Streamlit's
+multi-page convention (`pages/N_Name.py`) handles routing and the
+sidebar nav for free.
+
+**Password gate (`app_auth.py`) in front of everything, not just
+Upload.** `require_auth()` checks `st.session_state["authenticated"]`
+and calls `st.stop()` if absent, so every page -- including the
+read-only Dashboard -- is behind it. The read-only pages don't *need*
+protection for cost reasons, but this is a portfolio deployment under
+my name with a public URL; gating all of it is simpler to reason about
+than gating only the expensive page and arguing it's sufficient.
+
+**Shared daily quota, not per-session.** `ap.api_usage` is one row per
+day, incremented with an atomic `INSERT ... ON CONFLICT DO UPDATE
+... RETURNING count` -- Postgres's row lock serializes concurrent
+increments without any app-level locking. Deliberately a single shared
+counter, not `st.session_state`-scoped: a per-session counter resets
+every time a visitor reloads the page, which defeats the entire point
+of a spend cap on a public demo with no accounts.
+
+**Fresh `Ledger` per upload, not cached.** `SapData` is wrapped in
+`st.cache_resource` (static reference data, safe and desirable to
+share across visitors), but `Ledger` -- which accumulates mutable
+invoiced-quantity state as invoices are processed -- is rebuilt from
+CSVs on every single upload. Caching it would let one visitor's upload
+consume quota against a ledger another visitor's upload had already
+mutated, i.e. cross-visitor interference in a value that's supposed to
+be demo-only and stateless per request.
+
+**Real bug found during live Playwright verification, not a code
+review: a clock mismatch in the daily quota, caught by a test that
+only failed because the machine's local date rolled over mid-session.**
+`try_consume_daily_quota` wrote the day key using Python's
+`date.today()` (the app server's local clock), while every read path
+-- the Upload page's "N/limit used today" display, and the
+quota test itself -- used SQL `CURRENT_DATE` (the DB server's clock,
+`Etc/UTC` here). The two clocks agree most of the day, so this passed
+every manual check and every earlier test run. It broke the moment
+local time crossed midnight while Postgres (UTC) was still on the
+previous calendar day: the write path silently started a *new* row
+under tomorrow's date while every read path kept querying today's
+(now-stale) row. In production this is worse than a test failure --
+it's a quota that either resets early or never resets at a boundary
+determined by wherever the app happens to be hosted relative to UTC,
+and a usage counter that quietly stops matching what's displayed to
+users. Fixed by moving the write path onto `CURRENT_DATE` too, so
+every reader and the one writer share a single clock (removed the now
+-unused `datetime.date` import). The orphaned row the bug had created
+(`day = tomorrow, count = 3`, pure test artifact, confirmed by the
+table otherwise being empty -- i.e. not real traffic) was deleted by
+hand; no application code needed to "handle" it since the underlying
+cause was fixed, not papered over.
+
+**UI bug found the same way: `st.table()` truncated the PO-evidence
+and invoice-line tables at the viewport edge on wider tables** (more
+columns than `st.table()`'s fixed, non-scrolling width budget).
+Switched both to `st.dataframe(..., use_container_width=True,
+hide_index=True)` in `pages/1_Exception_Queue.py`, which sizes to the
+container and scrolls internally instead of clipping.
+
+**Verification used Playwright against the real running app and the
+real seeded database (217 already-processed invoices), not a mock.**
+Confirmed: wrong password rejected, correct password admits; Dashboard
+shows the true processed count; Exception Queue lists a real exception,
+and a real Approve click (after confirming the reason-required
+validation blocks an empty submission) shrinks the queue by exactly
+one; Audit Trail shows real timestamps and the real serving model
+(`claude-haiku-4-5`) on a real extraction entry; Upload page renders
+the mock-data warning and the live quota display. The one real-API
+action -- actually processing an upload -- was deliberately left
+untested; confirming the page loads and the quota gate displays
+correctly doesn't require spending anything, and actually submitting
+a file does. The single live Approve click used for verification was
+cleaned up afterward (decision reverted to `EXCEPTION`, the specific
+audit_log row it created deleted by invoice id) -- legitimate cleanup
+of my own test artifact, not a violation of the audit log's
+append-only guarantee for real usage, which the structural test in
+section 5 continues to enforce.
+
+All 76 tests pass (70 -> 76: new coverage for `dashboard_stats`,
+`list_invoices`, `get_invoice`/`get_exceptions`, and the quota
+function, including a regression test for the clock-mismatch bug
+above). No additional API spend this section -- every verification
+step used already-seeded data or the app's own free-to-render UI.

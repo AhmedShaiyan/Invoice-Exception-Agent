@@ -146,6 +146,62 @@ def test_record_human_decision_rejects_invalid_decision_value(conn):
     assert db.get_audit_trail(conn, invoice_id) == []   # no partial audit entry either
 
 
+# =============================================== read queries (app) / quota
+def test_dashboard_stats_counts_by_decision(conn):
+    db.insert_invoice(conn, _source("stats_a.pdf"), _fields(), decision="AUTO_APPROVE")
+    db.insert_invoice(conn, _source("stats_b.pdf"), _fields(invoice_number="TST-0002"), decision="EXCEPTION")
+    stats = db.dashboard_stats(conn)
+    assert stats["total"] >= 2
+    assert stats["by_decision"].get("AUTO_APPROVE", 0) >= 1
+    assert stats["by_decision"].get("EXCEPTION", 0) >= 1
+
+
+def test_list_invoices_filters_by_decision(conn):
+    db.insert_invoice(conn, _source("list_a.pdf"), _fields(), decision="AUTO_APPROVE")
+    db.insert_invoice(conn, _source("list_b.pdf"), _fields(invoice_number="TST-0002"), decision="EXCEPTION")
+    exceptions_only = db.list_invoices(conn, decision="EXCEPTION")
+    assert all(r["decision"] == "EXCEPTION" for r in exceptions_only)
+    assert any(r["source_file"] == _source("list_b.pdf") for r in exceptions_only)
+    assert not any(r["source_file"] == _source("list_a.pdf") for r in exceptions_only)
+
+
+def test_get_invoice_and_get_exceptions_round_trip(conn):
+    invoice_id = db.insert_invoice(conn, _source("detail.pdf"), _fields(), decision="EXCEPTION")
+    db.insert_exceptions(conn, invoice_id, [C.PRICE_VARIANCE], explanation="price is off",
+                          suggested_action="confirm with vendor")
+    row = db.get_invoice(conn, invoice_id)
+    assert row["source_file"] == _source("detail.pdf")
+    exceptions = db.get_exceptions(conn, invoice_id)
+    assert len(exceptions) == 1
+    assert exceptions[0]["code"] == C.PRICE_VARIANCE
+    assert exceptions[0]["explanation"] == "price is off"
+
+
+def test_get_invoice_returns_none_for_unknown_id(conn):
+    assert db.get_invoice(conn, 999_999_999) is None
+
+
+def test_try_consume_daily_quota_increments_and_respects_limit(conn):
+    """Restores the real counter afterward -- this table has no
+    SOURCE_PREFIX to sweep up by, and it's the same counter the live app
+    uses, so a test must not permanently inflate it."""
+    with conn.cursor() as cur:
+        cur.execute("SELECT count FROM ap.api_usage WHERE day = CURRENT_DATE")
+        row = cur.fetchone()
+    before = row[0] if row else 0
+    try:
+        allowed, count = db.try_consume_daily_quota(conn, daily_limit=before + 5)
+        assert count == before + 1
+        assert allowed is True
+        allowed_tight, count2 = db.try_consume_daily_quota(conn, daily_limit=before + 1)
+        assert count2 == before + 2
+        assert allowed_tight is False   # before+2 > before+1
+    finally:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE ap.api_usage SET count = %s WHERE day = CURRENT_DATE", (before,))
+        conn.commit()
+
+
 def test_audit_log_is_append_only_by_source_inspection():
     """Structural guarantee promised in db.py's own module docstring: grep
     the source for any write path to ap.audit_log other than the single
