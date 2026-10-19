@@ -737,3 +737,54 @@ All changes verified by the full test suite (59 non-DB tests passing;
 Docker/Postgres was down at the time, unrelated to any of this). No
 further API calls made -- still waiting on credit to confirm the actual
 dollar numbers.
+
+**Follow-up, after topping up: ran a small live sample before committing
+to the full resume run, and it caught a real problem with the Haiku
+switch.** Before spending on the full 143-invoice resume, sampled 13
+invoices from the still-unprocessed set -- all 3 `messy_scan`, 5 of the
+21 `scanned`, and 1 each from the 5 typed layouts -- through Haiku 4.5
+extraction only (no pipeline, no DB writes) and scored against ground
+truth directly:
+
+| Layout | Accuracy |
+|---|---|
+| tabular / modern | 100% |
+| classic | 96% |
+| minimal / statement | 93.3% |
+| scanned | 89.3% |
+| **messy_scan** | **19.4%** |
+
+Typed layouts and even plain scans are fine on Haiku. `messy_scan` is
+not -- and worse, 2 of the 3 cases reported *moderate-to-high*
+self-reported confidence (0.75-0.85) despite being badly wrong, which
+defeats the low-confidence-routes-to-review safety net entirely. This
+matches the concern raised before switching models (thinking was
+deliberately left on for extraction in an earlier version specifically
+because "thinking may help on messy scans") -- the sample confirms it
+wasn't a hypothetical concern.
+
+**Fix: route by whether the PDF actually has a text layer, not by
+pretending to detect "messy" specifically.** A real pipeline reading an
+arbitrary unlabeled PDF has no access to the dataset's `scenario`/`layout`
+ground-truth labels -- those are generation-time metadata, not something
+production extraction can see. What production *can* check, for free,
+before any API call: whether `pypdf` finds real extractable text.
+Confirmed directly against the actual files (not assumed): every typed
+layout carries 280-700+ characters of extractable text; every
+scanned/messy_scan file carries exactly 0 -- a clean, reliable split.
+`extract_invoice_pdf` now checks this first and routes typed PDFs to
+Haiku 4.5, image-only PDFs to Sonnet 5 (with thinking deliberately left
+on for the latter, restoring the original rationale for the ~24 hard
+documents it now actually applies to, while the ~119 typed documents in
+the remaining set keep the Haiku cost savings). A corrupt/unreadable PDF
+fails toward the stronger model, not toward silently picking the cheap
+one.
+
+Added `_has_text_layer` with its own unit tests against the real
+generated files (typed vs. scanned vs. garbage bytes) -- no API calls
+needed to verify the routing logic itself, only the sample run that
+caught the problem in the first place. All 70 tests pass.
+
+Cost of the sample run that caught this: ~13 Haiku extraction calls,
+well under $0.20 -- far cheaper than finding this out after the full
+resume run, or not finding it at all.

@@ -16,10 +16,38 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from invoice_agent import codes as C  # noqa: E402
-from invoice_agent.extract import ExtractionOutcome, _sanitize_money_strings, extract_from_einvoice  # noqa: E402
+from invoice_agent.extract import (  # noqa: E402
+    ExtractionOutcome, _has_text_layer, _sanitize_money_strings, extract_from_einvoice,
+)
 from invoice_agent.idempotency import IdempotencyStore  # noqa: E402
 
 SAP_DIR = ROOT / "data" / "sap"
+INVOICES_DIR = ROOT / "data" / "invoices"
+
+
+# =========================================================== text-layer routing
+def test_has_text_layer_true_for_typed_pdf():
+    """Regression guard for the model-routing decision in section 6: a
+    small live sample found Haiku 4.5 badly wrong (and overconfident) on
+    the dataset's messy_scan invoices, so typed vs. image-only PDFs now
+    route to different models. Uses a real generated invoice, not a
+    synthetic fixture -- this is exactly the distinction production
+    extraction relies on."""
+    gt = json.loads((INVOICES_DIR / "ground_truth.json").read_text())
+    typed_file = next(e["file"] for e in gt if e["layout"] == "tabular")
+    assert _has_text_layer((INVOICES_DIR / typed_file).read_bytes()) is True
+
+
+def test_has_text_layer_false_for_scanned_pdf():
+    gt = json.loads((INVOICES_DIR / "ground_truth.json").read_text())
+    scanned_file = next(e["file"] for e in gt if e["layout"] in ("scanned", "messy_scan"))
+    assert _has_text_layer((INVOICES_DIR / scanned_file).read_bytes()) is False
+
+
+def test_has_text_layer_false_for_garbage_bytes():
+    """Unreadable/corrupt input routes to the stronger model (fail toward
+    caution), not a crash."""
+    assert _has_text_layer(b"not a pdf at all") is False
 
 
 # ============================================================== sanitization

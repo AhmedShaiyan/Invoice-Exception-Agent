@@ -12,6 +12,7 @@ SYSTEM_PROMPT) -- tested directly against the dataset's prompt_injection
 scenario invoices in section 6's eval, not just asserted here.
 """
 import base64
+import io
 import json
 from dataclasses import asdict, dataclass, field
 from decimal import Decimal
@@ -19,23 +20,32 @@ from pathlib import Path
 from typing import Optional
 
 import anthropic
+import pypdf
 from pydantic import BaseModel, Field, ValidationError
 
 from . import codes as C
 from .money import D
 
-MODEL = "claude-haiku-4-5"
+MODEL = "claude-haiku-4-5"           # typed PDFs: bounded field-pulling, no vision ambiguity
+SCANNED_MODEL = "claude-sonnet-5"     # image-only PDFs: real OCR-level judgment under noise
 MAX_RETRIES = 3
 CONFIDENCE_THRESHOLD = 0.75
-# Extraction is a bounded, well-specified structured-output read of a
-# document -- not multi-step reasoning -- and it runs on every single
-# invoice, unlike the investigation agent (agent.py), which only runs on
-# the minority that fail validation and stays on Sonnet 5 for explanation
-# quality. Haiku 4.5 is ~3x cheaper per token and supports both vision and
-# structured outputs. Section 6's eval already measures extraction
-# accuracy by layout (including scans separately), so any real accuracy
-# regression on harder documents will show up there, not be assumed away.
-# See docs/decisions_log.md section 6.
+TEXT_LAYER_MIN_CHARS = 20
+# Extraction is bounded field-pulling, not reasoning, and runs on every
+# invoice -- Haiku 4.5 (~3x cheaper per token) is the right default. But a
+# small sample run against this dataset's actual scanned invoices (before
+# committing to a full run) found Haiku accurate on typed layouts (93-100%)
+# and plain scans (89%), but badly wrong on the messy_scan edge cases
+# (19%) -- and, worse, *overconfident* about it (self-reported confidence
+# 0.75-0.85 on fields that were actually wrong), which defeats the
+# low-confidence-routes-to-review safety net. Routing by whether the PDF
+# actually has a text layer (checked locally, for free, before any API
+# call -- confirmed directly against the real files: typed layouts carry
+# 280-700+ characters of extractable text, scanned/messy_scan carry
+# exactly 0) sends the genuinely hard documents to the stronger model
+# instead of trying to detect "messy" specifically, which isn't available
+# to a real pipeline reading an arbitrary unlabeled PDF anyway. See
+# docs/decisions_log.md section 6.
 
 SYSTEM_PROMPT = """You are extracting structured data from a vendor invoice document for an accounts-payable system.
 
@@ -130,6 +140,21 @@ def _sanitize_money_strings(fields: dict) -> dict:
     return fields
 
 
+def _has_text_layer(pdf_bytes: bytes) -> bool:
+    """Free, local, pre-API check: does this PDF carry real extractable
+    text, or is it an image-only scan? Confirmed directly against this
+    dataset's actual files (not assumed): typed layouts carry 280-700+
+    characters of extractable text; scanned/messy_scan carry exactly 0.
+    A corrupt/unreadable PDF is treated as "needs the stronger model"
+    (fail toward caution, not toward the cheaper path)."""
+    try:
+        reader = pypdf.PdfReader(io.BytesIO(pdf_bytes))
+        text = "".join(page.extract_text() or "" for page in reader.pages)
+        return len(text.strip()) >= TEXT_LAYER_MIN_CHARS
+    except Exception:   # noqa: BLE001 -- any parse failure routes to the stronger model
+        return False
+
+
 def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) -> ExtractionOutcome:
     """Capped retries on schema-invalid or refused output; never crashes the
     caller -- exhausting retries returns status="failed" for the pipeline to
@@ -138,32 +163,19 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
     client = client or anthropic.Anthropic()
     b64 = base64.standard_b64encode(pdf_bytes).decode("utf-8")
     last_error = None
-    # Prompt caching was tried here (SYSTEM_PROMPT is byte-identical across
-    # all 217 invoices in a run) and deliberately dropped after switching
-    # to Haiku 4.5: Haiku's minimum cacheable prefix is 4096 tokens, and
-    # this prompt is only ~500 -- a cache_control marker here would be a
-    # permanent, silent no-op (cache_creation_input_tokens always 0). On
-    # Sonnet 5/Opus 5 (min. 512-1024 tokens) it would have worked, which is
-    # exactly what's still done in agent.py's investigate() -- that call
-    # stayed on Sonnet 5. See docs/decisions_log.md section 6.
+    typed = _has_text_layer(pdf_bytes)
+    model = MODEL if typed else SCANNED_MODEL
+    # Prompt caching was tried for the typed (Haiku) path and dropped --
+    # Haiku's minimum cacheable prefix is 4096 tokens, this prompt is only
+    # ~500, so a cache_control marker here is a permanent no-op. See
+    # docs/decisions_log.md section 6.
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
-            response = client.messages.parse(
-                model=MODEL,
+            kwargs = dict(
+                model=model,
                 max_tokens=4096,
                 system=SYSTEM_PROMPT,
-                # No `thinking` param here, deliberately: Haiku 4.5 uses the
-                # older request scheme (thinking off by default when the
-                # param is omitted; `{"type": "disabled"}` is Sonnet
-                # 5/Opus 5-generation syntax and isn't guaranteed valid on
-                # Haiku -- not worth risking a 400 on every extraction call
-                # to express a state that's already the default here).
-                # This mirrors the same fix made when extraction was on
-                # Sonnet 5 (that model thinks by default even when omitted;
-                # see agent.py's investigate(), which stayed on Sonnet 5 and
-                # still needs the explicit disable). See
-                # docs/decisions_log.md section 6.
                 messages=[{
                     "role": "user",
                     "content": [
@@ -173,6 +185,22 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
                 }],
                 output_format=ExtractionResult,
             )
+            if typed:
+                # Haiku 4.5 uses the older request scheme: thinking is off
+                # by default when the param is omitted, and `{"type":
+                # "disabled"}` is Sonnet/Opus 5-generation syntax that
+                # isn't guaranteed valid here -- not worth risking a 400 to
+                # express a state that's already the default.
+                pass
+            else:
+                # Deliberately leave thinking on (the Sonnet 5 default)
+                # for the hard, image-only documents this path exists for
+                # -- the original rationale for keeping extraction's
+                # thinking on for messy scans, before cost pressure moved
+                # the common case to Haiku. See docs/decisions_log.md
+                # section 6.
+                kwargs["thinking"] = {"type": "adaptive"}
+            response = client.messages.parse(**kwargs)
             if response.stop_reason == "refusal":
                 last_error = f"model refused: {getattr(response, 'stop_details', None)}"
                 continue
@@ -187,7 +215,7 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
                 fields=_sanitize_money_strings(result.fields.model_dump()),
                 confidence=conf.model_dump(),
                 exception_code=None if status == "ok" else C.LOW_CONFIDENCE_EXTRACTION,
-                attempts=attempt, model=MODEL, usage=usage,
+                attempts=attempt, model=model, usage=usage,
             )
         except Exception as e:   # noqa: BLE001 -- deliberately broad: any failure here must
             # retry-then-route-to-review, never crash the caller or the pipeline.
@@ -195,7 +223,7 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
             continue
 
     return ExtractionOutcome(status="failed", exception_code=C.EXTRACTION_FAILED,
-                              attempts=MAX_RETRIES, model=MODEL, error=last_error)
+                              attempts=MAX_RETRIES, model=model, error=last_error)
 
 
 def extract_from_einvoice(json_bytes: bytes) -> ExtractionOutcome:
