@@ -145,6 +145,36 @@ def test_multi_po_line_disambiguated_by_material_when_po_item_collides(validator
     assert result.line_results[0].match_method in ("material", "description")
 
 
+def test_multi_po_line_unmatched_when_material_and_description_also_collide(validator):
+    """The real regression caught live in section 6's eval
+    (INV_130_JUR-2609-1070.pdf, INV_154_MAR-2609-1077.pdf): a vendor can
+    legitimately reorder the *same* material via two different POs in one
+    invoice, so po_item, material, AND description all collide across the
+    two valid POs -- there is no signal left in the line itself to pick
+    the right one. PO 4500012001 and 4500012037 both carry MAT-1001 ("A4
+    Copier Paper (500 sheets)") at item 00010 for this vendor (confirmed
+    against the real generated data). Before this fix, the material/
+    description fallback silently returned the first candidate found,
+    crediting one PO's quantity ledger with both lines' quantities and
+    corrupting it for both referenced POs -- not a false approval every
+    time (sometimes capacity happened not to be exceeded), but wrong
+    bookkeeping regardless. Must now refuse to guess (LINE_NOT_ON_PO)
+    rather than silently pick one. See docs/decisions_log.md section 6."""
+    fields = base_invoice(
+        po_number="4500012001/4500012037",
+        lines=[
+            {"po_item": "00010", "material": "MAT-1001", "description": "A4 Copier Paper (500 sheets)",
+             "quantity": 5, "unit": "BOX", "unit_price": "6.80", "amount": "34.00"},
+        ],
+        subtotal="34.00", gst_amount="3.06", total="37.06",
+    )
+    fields = _without_line_po_number(fields)
+    result = validator.validate(fields)
+    assert result.line_results[0].matched is False
+    assert result.decision == "EXCEPTION"
+    assert C.LINE_NOT_ON_PO in result.exception_codes
+
+
 # ============================================================ full dataset
 def test_full_dataset_matches_ground_truth():
     ground_truth = json.loads(GROUND_TRUTH_PATH.read_text())

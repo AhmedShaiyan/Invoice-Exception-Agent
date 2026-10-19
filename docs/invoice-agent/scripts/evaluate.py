@@ -77,11 +77,20 @@ REPORT_MD = ROOT / "docs" / "eval_report.md"
 CHARTS_DIR = ROOT / "docs" / "eval_charts"
 RAW_RESULTS = ROOT / "data" / "eval_results.json"
 
-# Sonnet 5 API pricing used for the cost estimate below -- intro rate through
-# 2026-08-31 per the claude-api skill's cached model table. Approximate by
-# nature (rates can change); reported as an estimate, not a bill.
-PRICE_PER_M_INPUT = Decimal("3.00")
-PRICE_PER_M_OUTPUT = Decimal("15.00")
+# Per-model API pricing used for the cost estimate below -- intro rate for
+# Sonnet 5 through 2026-08-31 per the claude-api skill's cached model table.
+# Approximate by nature (rates can change); reported as an estimate, not a
+# bill. Keyed by model so extraction's Haiku/Sonnet split (see extract.py's
+# text-layer routing) is billed correctly -- an earlier version of this
+# file hardcoded Sonnet 5 rates for every call, which overstated the real
+# cost of a run by ~36% (reported $6.77, actual $4.99 -- caught by
+# recomputing directly from the audit log after a live run). See
+# docs/decisions_log.md section 6.
+MODEL_RATES = {
+    "claude-haiku-4-5": (Decimal("1.00"), Decimal("5.00")),
+    "claude-sonnet-5": (Decimal("3.00"), Decimal("15.00")),
+}
+DEFAULT_RATE = MODEL_RATES["claude-sonnet-5"]
 
 HEADER_FIELDS = ["invoice_number", "invoice_date", "vendor_name", "vendor_gst_reg_no",
                   "po_number", "currency", "subtotal", "gst_rate", "gst_amount", "total"]
@@ -126,11 +135,12 @@ def field_accuracy(extracted: dict, expected: dict) -> tuple:
     return correct, total
 
 
-def token_cost(usage: dict) -> Decimal:
+def token_cost(usage: dict, model: str = None) -> Decimal:
     if not usage:
         return Decimal("0")
-    return (Decimal(usage.get("input_tokens", 0) or 0) / Decimal(1_000_000) * PRICE_PER_M_INPUT +
-            Decimal(usage.get("output_tokens", 0) or 0) / Decimal(1_000_000) * PRICE_PER_M_OUTPUT)
+    rate_in, rate_out = MODEL_RATES.get(model, DEFAULT_RATE)
+    return (Decimal(usage.get("input_tokens", 0) or 0) / Decimal(1_000_000) * rate_in +
+            Decimal(usage.get("output_tokens", 0) or 0) / Decimal(1_000_000) * rate_out)
 
 
 def run_eval(resume: bool, limit: int, investigate: bool) -> list:
@@ -192,11 +202,11 @@ def run_eval(resume: bool, limit: int, investigate: bool) -> list:
                                 "WHERE source_file = %s ORDER BY id DESC LIMIT 1", (fname,))
                     invoice_id, extracted_json, decision = cur.fetchone()
                 trail = db.get_audit_trail(conn, invoice_id)
-                extraction_payload = next((e["payload"] for e in trail if e["action"] == "extract"), {})
+                extraction_entry = next((e for e in trail if e["action"] == "extract"), {})
                 exceptions_row = _fetch_exception_codes(conn, invoice_id)
-                investigate_payload = next((e["payload"] for e in trail if e["action"] == "investigate"), None)
+                investigate_entry = _current_investigate_entry(trail)
                 rows.append(_build_row(entry, extracted_json or {}, decision, exceptions_row,
-                                        extraction_payload, investigate_payload, elapsed=None))
+                                        extraction_entry, investigate_entry, elapsed=None))
                 continue
 
             path = INVOICES_DIR / fname
@@ -209,11 +219,11 @@ def run_eval(resume: bool, limit: int, investigate: bool) -> list:
                 cur.execute("SELECT extracted_json FROM ap.invoices WHERE id = %s", (result.invoice_id,))
                 extracted_json = cur.fetchone()[0] or {}
             trail = db.get_audit_trail(conn, result.invoice_id)
-            extraction_payload = next((e["payload"] for e in trail if e["action"] == "extract"), {})
-            investigate_payload = next((e["payload"] for e in trail if e["action"] == "investigate"), None)
+            extraction_entry = next((e for e in trail if e["action"] == "extract"), {})
+            investigate_entry = _current_investigate_entry(trail)
 
             rows.append(_build_row(entry, extracted_json, result.decision, result.exception_codes,
-                                    extraction_payload, investigate_payload, elapsed))
+                                    extraction_entry, investigate_entry, elapsed))
 
     conn.close()
     return rows
@@ -225,8 +235,29 @@ def _fetch_exception_codes(conn, invoice_id) -> list:
         return sorted(r[0] for r in cur.fetchall())
 
 
-def _build_row(entry, extracted_json, decision, exception_codes, extraction_payload,
-                investigate_payload, elapsed) -> dict:
+def _current_investigate_entry(trail: list):
+    """The most recent 'investigate' entry, but only if nothing invalidated
+    it since. A 'revalidate' entry (db.py's manual re-validation after a
+    deterministic code fix -- see decisions_log.md section 6) logged after
+    the investigation means that explanation analyzed a code the invoice
+    no longer carries; scoring it for groundedness would check a claim
+    against the wrong problem, not catch a real grounding failure. The
+    audit log itself is never edited (append-only by design) -- this just
+    stops a stale entry from being scored as if it were current."""
+    investigate_entries = [e for e in trail if e["action"] == "investigate"]
+    if not investigate_entries:
+        return None
+    latest_investigate = investigate_entries[-1]
+    revalidate_entries = [e for e in trail if e["action"] == "revalidate"]
+    if revalidate_entries and revalidate_entries[-1]["created_at"] > latest_investigate["created_at"]:
+        return None
+    return latest_investigate
+
+
+def _build_row(entry, extracted_json, decision, exception_codes, extraction_entry,
+                investigate_entry, elapsed) -> dict:
+    extraction_payload = (extraction_entry or {}).get("payload", {})
+    investigate_payload = (investigate_entry or {}).get("payload")
     correct, total = field_accuracy(extracted_json, entry["fields"])
     row = {
         "file": entry["file"], "layout": entry["layout"], "format": entry["format"],
@@ -236,8 +267,10 @@ def _build_row(entry, extracted_json, decision, exception_codes, extraction_payl
         "field_correct": correct, "field_total": total,
         "extraction_status": extraction_payload.get("status"),
         "extraction_usage": extraction_payload.get("usage"),
+        "extraction_model": (extraction_entry or {}).get("model"),
         "investigated": investigate_payload is not None,
         "investigation_usage": (investigate_payload or {}).get("usage"),
+        "investigation_model": (investigate_entry or {}).get("model"),
         "explanation": (investigate_payload or {}).get("explanation"),
         "tool_calls": (investigate_payload or {}).get("tool_calls", []),
         "elapsed_seconds": elapsed,
@@ -400,14 +433,19 @@ def build_report(rows: list) -> str:
     timed = [r for r in rows if r["elapsed_seconds"] is not None]
     plain = [r["elapsed_seconds"] for r in timed if not r["investigated"]]
     with_inv = [r["elapsed_seconds"] for r in timed if r["investigated"]]
-    total_cost = sum((token_cost(r["extraction_usage"]) + token_cost(r["investigation_usage"]) for r in rows),
-                      Decimal("0"))
+    extraction_cost = sum((token_cost(r["extraction_usage"], r.get("extraction_model")) for r in rows),
+                          Decimal("0"))
+    investigation_cost = sum((token_cost(r["investigation_usage"], r.get("investigation_model")) for r in rows),
+                              Decimal("0"))
+    total_cost = extraction_cost + investigation_cost
+    rate_note = ", ".join(f"{m} ${r[0]}/${r[1]} per M in/out" for m, r in MODEL_RATES.items())
     lines.append(f"- Extraction + validation only (no exception, {len(plain)} invoices): "
                  f"{_mean(plain):.2f}s mean, {_median(plain):.2f}s median\n"
                  f"- Extraction + validation + investigation ({len(with_inv)} invoices): "
                  f"{_mean(with_inv):.2f}s mean, {_median(with_inv):.2f}s median\n"
-                 f"- Estimated total API cost for this run: **${total_cost:.2f}** "
-                 f"(Sonnet 5 at ${PRICE_PER_M_INPUT}/M input, ${PRICE_PER_M_OUTPUT}/M output tokens -- "
+                 f"- Estimated API cost: extraction **${extraction_cost:.2f}**, "
+                 f"investigation **${investigation_cost:.2f}**, total **${total_cost:.2f}** "
+                 f"(billed per-call at its actual model's rate -- {rate_note}; "
                  f"rows reused via --resume have no usage recorded this run and are not re-counted)\n"
                  f"- Estimated average cost per invoice: ${(total_cost / n):.4f}\n")
     if timed:

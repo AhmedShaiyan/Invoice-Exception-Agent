@@ -252,25 +252,36 @@ class Validator:
                 if len(matches) == 1:
                     return LineResult(line.get("description"), True, "po_item", matches[0])
 
+        # Same ambiguity hazard as po_item above, found live in the same
+        # eval run: a vendor can legitimately order the identical material
+        # (same code, same description) via two different POs in one
+        # invoice (multi_po_clean). Matching the first candidate found
+        # silently credited the wrong PO's quantity ledger and produced a
+        # real false-positive QTY_EXCEEDS_GR (INV_130_JUR-2609-1070.pdf).
+        # Both the material and description paths below now require the
+        # match to be unambiguous *across distinct POs* before trusting it
+        # -- matches within the same PO (e.g. two lines sharing a material
+        # code) are unaffected, only a cross-PO tie falls through instead
+        # of guessing. See docs/decisions_log.md section 6.
         candidates = [ekpo for ebeln in valid_pos for ekpo in self.sap.po_lines_by_po.get(ebeln, [])]
         material = line.get("material")
         if material:
-            for ekpo in candidates:
-                if ekpo["matnr"] == material:
-                    return LineResult(line.get("description"), True, "material", ekpo)
+            matches = [ekpo for ekpo in candidates if ekpo["matnr"] == material]
+            if matches and len({ekpo["ebeln"] for ekpo in matches}) == 1:
+                return LineResult(line.get("description"), True, "material", matches[0])
 
         if candidates:
             desc = (line.get("description") or "").strip().lower()
-            best, best_score = None, 0
-            for ekpo in candidates:
-                score = fuzz.ratio(desc, ekpo["txz01"].strip().lower())
-                if score > best_score:
-                    best, best_score = ekpo, score
-            if best is not None and best_score >= DESCRIPTION_MATCH_SCORE:
-                true_price = D(best["netpr"]) / D(best["peinh"])
-                inv_price = D(line["unit_price"])
-                if true_price > 0 and abs(inv_price - true_price) / true_price <= PRICE_PLAUSIBILITY_BAND:
-                    return LineResult(line.get("description"), True, "description", best)
+            scored = [(fuzz.ratio(desc, ekpo["txz01"].strip().lower()), ekpo) for ekpo in candidates]
+            best_score = max((s for s, _ in scored), default=0)
+            if best_score >= DESCRIPTION_MATCH_SCORE:
+                top = [ekpo for s, ekpo in scored if s == best_score]
+                if len({ekpo["ebeln"] for ekpo in top}) == 1:
+                    best = top[0]
+                    true_price = D(best["netpr"]) / D(best["peinh"])
+                    inv_price = D(line["unit_price"])
+                    if true_price > 0 and abs(inv_price - true_price) / true_price <= PRICE_PLAUSIBILITY_BAND:
+                        return LineResult(line.get("description"), True, "description", best)
 
         return LineResult(line.get("description"), False)
 

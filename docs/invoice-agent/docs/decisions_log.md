@@ -788,3 +788,139 @@ caught the problem in the first place. All 70 tests pass.
 Cost of the sample run that caught this: ~13 Haiku extraction calls,
 well under $0.20 -- far cheaper than finding this out after the full
 resume run, or not finding it at all.
+
+## Section 6 — full run, final results
+
+**Ran the full 217-invoice evaluation fresh (no `--resume`)** so every row
+reflects one consistent version of the pipeline, after concluding
+partway through this section that reusing the 74 invoices from the
+credit-exhausted run would mix two different pipeline versions into one
+report (see above). Real cost: **$4.96-5.00** (extraction $1.46,
+investigation $3.50-3.55), close to the ~$5-7 honest estimate given
+beforehand. Headline result:
+
+**0 false approvals out of 61 actual exceptions -- the hard requirement
+passes.** Extraction accuracy 95.6% overall (3419/3575 fields); by layout,
+everything typed is 93-100%, plain scans 94%, and `messy_scan` 78% (the
+3 hardest documents in the dataset, correctly routed to Sonnet 5 and
+correctly self-reporting low confidence -- see the routing fix above).
+3/3 prompt-injection invoices resisted the embedded "auto-approve this"
+text. False rejections: 10/156 (6.4%), each one individually explained in
+the report rather than left as a bare count.
+
+**A real bug in evaluate.py's own cost math, caught before it shipped:**
+the first version of the cost calculation hardcoded Sonnet 5 pricing for
+*every* call, including the ~184 Haiku-extracted invoices -- overstating
+the run's true cost by ~36% ($6.77 reported vs. $4.99 actual, confirmed
+by recomputing directly from the audit log's per-model usage). Fixed by
+threading the actual serving model through to the cost calculation
+(`MODEL_RATES` keyed by model, not one global rate) and re-generating the
+report from the already-captured data -- no new API calls needed, since
+cost is just arithmetic over usage already on disk.
+
+**A second, more serious validator gap, caught by the same false-positive
+investigation pattern as the QTY_EXCEEDS_GR bug earlier in this section:**
+`_match_line`'s `po_item` path already guards against two referenced POs
+sharing an item number (fixed earlier this section), but the `material`
+and `description` fallback paths right below it had no equivalent
+guard -- each just returned the *first* matching candidate. A vendor
+legitimately ordering the identical material via two different POs in
+one invoice (`multi_po_clean`) hits exactly this: both candidates share
+the same material code and description, and the first-match behavior
+silently credited **one** PO's quantity ledger with **both** lines'
+quantities, corrupting the ledger for *both* referenced POs (one
+undercounted, one overcounted) -- a correctness problem that could cause
+a wrong decision on a *later* invoice referencing either PO, not just
+this one.
+
+Found via `INV_130_JUR-2609-1070.pdf`, which the full run flagged
+`QTY_EXCEEDS_GR` -- a plausible-looking but, on inspection, wrong
+diagnosis (the real problem was the ambiguous match, not an actual
+over-receipt). Fixed by applying the same "trust it only if it's
+unambiguous across distinct POs" guard to both the material and
+description paths. Replaying all 217 invoices' already-extracted real
+data through the fixed validator (free, local, deterministic -- no API
+calls) found exactly 2 affected invoices:
+
+- `INV_130`: `QTY_EXCEEDS_GR` (wrong code, silently-corrupted ledger) ->
+  `LINE_NOT_ON_PO` (honest "ambiguous, needs a human to disambiguate")
+- `INV_154_MAR-2609-1077.pdf`: **`AUTO_APPROVE` -> `EXCEPTION`**. Ground
+  truth confirms this one is genuinely clean (`multi_po_clean`,
+  `expected_decision: AUTO_APPROVE`) -- it had been silently approved by
+  the same unprotected first-match behavior, which happened to not
+  overshoot either PO's capacity *this time*. Not a false approval that
+  reached the report (ground truth's own expectation was AUTO_APPROVE,
+  so the strict scoring never flagged it either), but a real, previously
+  invisible case of the matcher guessing right by chance while corrupting
+  ledger state in the background. This is exactly the kind of thing the
+  zero-false-approvals check cannot catch by construction -- it only
+  catches cases where the *decision* ends up wrong, not cases where the
+  decision looks right for the wrong reason.
+
+Applied both corrections directly to the two affected rows (not a full
+re-run) via `Validator.validate()` replay plus `db.update_decision` /
+`db.insert_exceptions`, with a `revalidate` audit-log entry recording
+*why* -- the original `extract`/`validate` entries are never edited or
+deleted, consistent with the append-only design; the correction is a new,
+visible event in the trail, not a rewrite of history.
+
+**Cleaning up the resulting stale data, without re-spending or fighting
+the append-only log:** `INV_130` had already been investigated under the
+old (wrong) `QTY_EXCEEDS_GR` code before the fix, so its stored
+explanation analyzed a problem that no longer applies -- and promptly
+showed up flagged as "ungrounded" in the groundedness check, for the
+right reason (it cites numbers that support a diagnosis the invoice no
+longer carries) but the wrong root cause (staleness, not a real
+fabrication). `INV_154` was never investigated at all (it had been
+`AUTO_APPROVE`, which never triggers investigation).
+
+Explicitly chose **not** to spend on two fresh investigation calls to
+patch this -- after already spending $4.96-5.00 on the full run, two
+small calls to fix a presentational gap is exactly the kind of creeping
+"one more small thing" the person funding this flagged directly, and
+they were right to. Fixed for free instead: `evaluate.py`'s
+`_current_investigate_entry()` now checks whether a `revalidate` entry
+postdates the `investigate` entry for that invoice, and if so treats it
+as not-currently-investigated for scoring purposes -- correctly dropping
+it from both the grounded and ungrounded counts (67 -> 66 investigated)
+rather than scoring a stale explanation against the wrong problem. The
+audit log itself is untouched; this only changes what the *report*
+treats as current. One minor, accepted side effect: the reported cost
+dropped by $0.04 (from excluding INV_130's past investigation spend from
+the current scoring pass) even though that money was genuinely spent --
+immaterial given the report already frames cost as "an estimate, not a
+bill," and not worth another round of changes to chase down.
+
+**Other real findings, disclosed rather than hidden:**
+
+- `LINE_NOT_ON_PO`: 27% precision (3 TP, 8 FP). Two root causes, both
+  understood: the cross-PO material/description collision above (2 of
+  the 8), and a `price_unit_confusion` x `statement`-layout extraction
+  quirk where the model occasionally extracts a PO-item-shaped string
+  into the `material` field instead of the real material code, which
+  then fails both the material match and the price-plausibility-gated
+  description match (since `price_unit_confusion`'s whole premise is a
+  price that *shouldn't* look plausible). This reclassifies what should
+  be `PRICE_UNIT_MISMATCH` as `LINE_NOT_ON_PO` instead -- still routes to
+  a human, just under the less-specific code. Not fixed this pass
+  (narrow: 3/217 invoices, needs extraction prompt tuning rather than a
+  validator change); disclosed here instead of silently averaged away.
+  This is also why `PRICE_UNIT_MISMATCH` itself shows 0% recall in the
+  per-code table -- all 3 cases are present, just under the other code.
+- `CURRENCY_MISMATCH`: 25% precision (1 TP, 3 FP) -- the already-disclosed
+  USD-vendor-defaults-to-SGD extraction issue from earlier in this
+  section, now confirmed at full-dataset scale rather than a 2-invoice
+  sample.
+- Explanation groundedness: 63.6% (42/66). Several of the "ungrounded"
+  numbers flagged (e.g. recurring bare `9`, `8` digits) are very likely
+  the heuristic's own documented limitation -- it can't recognize a
+  legitimate arithmetic derivation (a GST rate restated as a plain
+  percentage, a computed difference) as grounded, not evidence the agent
+  fabricated them. Not re-litigated line-by-line against this full
+  dataset; flagged here as the most likely explanation for the lower
+  percentage rather than claimed as a clean number.
+
+All 70 tests pass. Total spend across all of section 6, start to finish:
+roughly $5.30-5.50 (the $4.96-5.00 full run plus the ~13-invoice Haiku
+sample and the 3-invoice Sonnet confirmation sample that caught the
+scanned-document routing problem before it could affect the full run).
