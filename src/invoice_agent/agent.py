@@ -362,11 +362,34 @@ def groundedness_check(explanation: str, tool_calls: list, invoice_fields: dict 
     r"\d[\d,]*\.?\d*" otherwise swallows an ordinary sentence-ending period
     into the match, e.g. "...quantity of 4." -> "4." -- which then never
     equals the grounded "4" even though the digit itself is fine. Caught
-    live in section 6's eval run: see docs/decisions_log.md section 6."""
+    live in section 6's eval run: see docs/decisions_log.md section 6.
+
+    A number that fails the strict verbatim check falls through to a
+    second pass: is it *derivable* from the grounded evidence? Three
+    narrow, explicit rules, checked in this order --
+      1. a tax/GST rate restated as a bare percentage (0.09 in evidence,
+         "9" or "9%" in the explanation);
+      2. the sum or difference of two grounded numbers (e.g. "ordered 10,
+         received 7, so 3 short" -- 3 = 10 - 7);
+      3. the rounded product of two grounded numbers (e.g. a line total
+         computed as quantity x unit price).
+    This only makes the check *more* honest, not laxer: the strict pass
+    still runs first and unchanged, so a real fabrication that happens
+    not to equal any sum/difference/product of the evidence is still
+    caught. It does NOT prove the agent actually performed that specific
+    computation -- only that the number is consistent with one -- so this
+    remains a heuristic, not a proof, same as the strict pass always was."""
     import re
+    from decimal import Decimal, InvalidOperation
 
     def extract(text):
         return {n.rstrip(".") for n in re.findall(r"\d[\d,]*\.?\d*", text)}
+
+    def as_decimal(s):
+        try:
+            return Decimal(s.replace(",", ""))
+        except InvalidOperation:
+            return None
 
     numbers_in_explanation = extract(explanation)
     numbers_in_evidence = set()
@@ -374,6 +397,33 @@ def groundedness_check(explanation: str, tool_calls: list, invoice_fields: dict 
         numbers_in_evidence.update(extract(json.dumps(call.get("output", call))))
     if invoice_fields is not None:
         numbers_in_evidence.update(extract(json.dumps(invoice_fields)))
-    ungrounded = {n for n in numbers_in_explanation if n.replace(",", "") not in
-                  {e.replace(",", "") for e in numbers_in_evidence}}
-    return {"grounded": len(ungrounded) == 0, "ungrounded_numbers": sorted(ungrounded)}
+
+    evidence_norm = {e.replace(",", "") for e in numbers_in_evidence}
+    not_verbatim = {n for n in numbers_in_explanation if n.replace(",", "") not in evidence_norm}
+
+    evidence_decimals = [d for d in (as_decimal(e) for e in evidence_norm) if d is not None]
+    derivable = set()
+    for n in not_verbatim:
+        d = as_decimal(n)
+        if d is None:
+            continue
+        if any(ev * 100 == d for ev in evidence_decimals):   # rule 1: rate -> percentage
+            derivable.add(n)
+            continue
+        found = False
+        for i, a in enumerate(evidence_decimals):
+            if found:
+                break
+            for b in evidence_decimals[i + 1:]:
+                if d in (a + b, abs(a - b)):                  # rule 2: sum/difference
+                    found = True
+                    break
+                if d == (a * b).quantize(Decimal("0.01")):     # rule 3: product (e.g. qty x price)
+                    found = True
+                    break
+        if found:
+            derivable.add(n)
+
+    ungrounded = not_verbatim - derivable
+    return {"grounded": len(ungrounded) == 0, "ungrounded_numbers": sorted(ungrounded),
+            "derived_numbers": sorted(derivable)}

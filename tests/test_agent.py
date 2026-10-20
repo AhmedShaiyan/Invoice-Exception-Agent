@@ -229,6 +229,40 @@ def test_groundedness_check_allows_citing_the_invoice_itself():
     assert result["grounded"] is True
 
 
+def test_groundedness_check_allows_rate_restated_as_percentage():
+    """0.09 in evidence (a gst_rate field), "9" in the explanation as a
+    plain-English restatement of 9% -- not a verbatim match, but not a
+    fabrication either."""
+    tool_calls = [{"tool_name": "x", "input": {}, "output": {"gst_rate": "0.09"}}]
+    result = groundedness_check("The invoice charges GST at 9%, which is correct.", tool_calls)
+    assert result["grounded"] is True
+    assert "9" in result["derived_numbers"]
+
+
+def test_groundedness_check_allows_difference_of_two_grounded_numbers():
+    tool_calls = [{"tool_name": "x", "input": {}, "output": {"ordered": "10", "received": "7"}}]
+    result = groundedness_check("Ordered 10, received 7, so 3 units are short.", tool_calls)
+    assert result["grounded"] is True
+    assert "3" in result["derived_numbers"]
+
+
+def test_groundedness_check_allows_product_of_two_grounded_numbers():
+    tool_calls = [{"tool_name": "x", "input": {}, "output": {"qty": "8", "unit_price": "28.00"}}]
+    result = groundedness_check("8 units at 28.00 each comes to 224.00.", tool_calls)
+    assert result["grounded"] is True
+    assert "224.00" in result["derived_numbers"]
+
+
+def test_groundedness_check_still_flags_a_number_no_rule_explains():
+    """The derivation rules must not swallow a genuine fabrication -- a
+    number unrelated to any sum/difference/product/rate of the evidence
+    still fails."""
+    tool_calls = [{"tool_name": "x", "input": {}, "output": {"qty": "8", "unit_price": "28.00"}}]
+    result = groundedness_check("The vendor has been late on 47 prior occasions.", tool_calls)
+    assert result["grounded"] is False
+    assert "47" in result["ungrounded_numbers"]
+
+
 # ========================================================= draft_vendor_query
 def test_draft_vendor_query_calls_parse_not_create_no_tools():
     """A cheap, tool-less follow-up -- must not open a tool-use loop like a
