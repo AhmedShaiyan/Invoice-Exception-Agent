@@ -341,7 +341,7 @@ def render_minimal(c, inv):
         # layout omitted it entirely until section 6's eval caught Claude
         # inferring a unit from the description text instead (producing a
         # spurious UOM_MISMATCH on a non-"EA" material). See
-        # docs/decisions_log.md section 6.
+        # docs/decisions_log_full.md section 6.
         c.drawString(15 * mm, y, f"{ln['description'][:40]:<40} {ln['quantity']:>5} {ln['unit']:<5} x {money(ln['unit_price']):>10} = {money(ln['amount']):>12}")
     y -= 6 * mm
     c.drawString(15 * mm, y, "-" * 92)
@@ -488,7 +488,7 @@ def to_pdf(inv, layout, injection_text=None):
 def make_scanned(pdf_bytes, extra_degraded=False):
     """Rasterise, tilt slightly and blur, so there is no text layer to copy.
     Uses pypdfium2 (pip-installable) rather than pdf2image/poppler -- see
-    docs/decisions_log.md section 0."""
+    docs/decisions_log_full.md section 0."""
     dpi = 95 if extra_degraded else 120
     pdf = pdfium.PdfDocument(pdf_bytes)
     bitmap = pdf[0].render(scale=dpi / 72)

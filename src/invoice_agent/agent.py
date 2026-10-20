@@ -145,7 +145,7 @@ class Investigator:
         on every subsequent turn of the conversation, which is the actual
         reason investigation calls cost far more per call than extraction.
         Found live in section 6's eval cost breakdown -- see
-        docs/decisions_log.md section 6."""
+        docs/decisions_log_full.md section 6."""
         lifnr = self.sap.find_vendor_by_name(vendor_name)
         if lifnr is None:
             return {"error": f"No vendor found matching '{vendor_name}'"}
@@ -239,7 +239,7 @@ class Investigator:
         # turns 2+ don't re-bill the ~1-2K token tool schema set; across
         # investigations in the same eval run it means only the first one
         # pays the cache-write cost (5-minute TTL) for the rest. See
-        # docs/decisions_log.md section 6 -- this was identified as the
+        # docs/decisions_log_full.md section 6 -- this was identified as the
         # likely-largest fixable cost driver after the eval burned real
         # money without it.
         cached_system = [{"type": "text", "text": SYSTEM_PROMPT,
@@ -362,7 +362,7 @@ def groundedness_check(explanation: str, tool_calls: list, invoice_fields: dict 
     r"\d[\d,]*\.?\d*" otherwise swallows an ordinary sentence-ending period
     into the match, e.g. "...quantity of 4." -> "4." -- which then never
     equals the grounded "4" even though the digit itself is fine. Caught
-    live in section 6's eval run: see docs/decisions_log.md section 6.
+    live in section 6's eval run: see docs/decisions_log_full.md section 6.
 
     A number that fails the strict verbatim check falls through to a
     second pass: is it *derivable* from the grounded evidence? Three

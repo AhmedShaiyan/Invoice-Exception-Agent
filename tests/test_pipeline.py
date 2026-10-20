@@ -6,7 +6,7 @@ elsewhere is pipeline.py's own wiring: does it call things in the right
 order, does it skip investigation on a clean invoice, does it short-circuit
 on an idempotent hit, and -- the actual bug this suite was written to catch
 -- does the invoice get inserted with a decision the schema's CHECK
-constraint allows (see decisions_log.md section 5: the original draft
+constraint allows (see decisions_log_full.md section 5: the original draft
 inserted a 'PENDING' placeholder, which doesn't exist in the schema)."""
 import sys
 from pathlib import Path

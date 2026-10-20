@@ -3,7 +3,7 @@ sanitization, e-invoice JSON parsing, and idempotency. Deliberately does NOT
 make live API calls in this suite -- that would make every test run cost
 money and be flaky on rate limits/network. The PDF->Claude path was verified
 manually against real invoices spanning clean/scanned/messy-scan/
-prompt-injection scenarios (see docs/decisions_log.md section 3) and is
+prompt-injection scenarios (see docs/decisions_log_full.md section 3) and is
 exercised at full scale by section 6's evaluation run."""
 import json
 import sys

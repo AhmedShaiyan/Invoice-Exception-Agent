@@ -7,7 +7,7 @@ as an actual enforced property -- not just something the live model happened
 to respect in manual testing). The real tool-selection/explanation quality
 was verified manually against live invoices across several exception types
 (GST_REG_MISMATCH, DUPLICATE_INVOICE, VENDOR_BLOCKED, QTY_EXCEEDS_GR with a
-genuinely ambiguous GR history) -- see docs/decisions_log.md section 4."""
+genuinely ambiguous GR history) -- see docs/decisions_log_full.md section 4."""
 import sys
 from pathlib import Path
 from types import SimpleNamespace

@@ -153,7 +153,7 @@ def test_multi_po_line_disambiguated_by_material_when_po_item_collides(validator
     must not silently guess one (which would credit the wrong PO's
     quantity ledger) and must still resolve correctly via material/
     description. Mirrors the real multi_po_clean regression this fix
-    caused and then fixed (docs/decisions_log.md section 6)."""
+    caused and then fixed (docs/decisions_log_full.md section 6)."""
     fields = base_invoice(
         po_number="4500012001/4500012002",
         lines=[
@@ -182,7 +182,7 @@ def test_multi_po_line_unmatched_when_material_and_description_also_collide(vali
     corrupting it for both referenced POs -- not a false approval every
     time (sometimes capacity happened not to be exceeded), but wrong
     bookkeeping regardless. Must now refuse to guess (LINE_NOT_ON_PO)
-    rather than silently pick one. See docs/decisions_log.md section 6."""
+    rather than silently pick one. See docs/decisions_log_full.md section 6."""
     fields = base_invoice(
         po_number="4500012001/4500012037",
         lines=[

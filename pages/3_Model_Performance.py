@@ -80,7 +80,7 @@ g = summary["groundedness"]
 if g["investigated"]:
     st.metric("Grounded explanations", f"{g['grounded']} / {g['investigated']}",
               help="Every number in the explanation traces back to a tool call or the invoice "
-                   "itself, per a heuristic check -- see docs/decisions_log.md for what it can't catch.")
+                   "itself, per a heuristic check -- see docs/decisions_log_full.md for what it can't catch.")
 else:
     st.caption("No investigated exceptions in this run.")
 

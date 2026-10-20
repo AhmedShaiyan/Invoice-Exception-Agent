@@ -45,7 +45,7 @@ TEXT_LAYER_MIN_CHARS = 20
 # exactly 0) sends the genuinely hard documents to the stronger model
 # instead of trying to detect "messy" specifically, which isn't available
 # to a real pipeline reading an arbitrary unlabeled PDF anyway. See
-# docs/decisions_log.md section 6.
+# docs/decisions_log_full.md section 6.
 
 SYSTEM_PROMPT = """You are extracting structured data from a vendor invoice document for an accounts-payable system.
 
@@ -168,7 +168,7 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
     # Prompt caching was tried for the typed (Haiku) path and dropped --
     # Haiku's minimum cacheable prefix is 4096 tokens, this prompt is only
     # ~500, so a cache_control marker here is a permanent no-op. See
-    # docs/decisions_log.md section 6.
+    # docs/decisions_log_full.md section 6.
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -197,7 +197,7 @@ def extract_invoice_pdf(pdf_bytes: bytes, client: anthropic.Anthropic = None) ->
                 # for the hard, image-only documents this path exists for
                 # -- the original rationale for keeping extraction's
                 # thinking on for messy scans, before cost pressure moved
-                # the common case to Haiku. See docs/decisions_log.md
+                # the common case to Haiku. See docs/decisions_log_full.md
                 # section 6.
                 kwargs["thinking"] = {"type": "adaptive"}
             response = client.messages.parse(**kwargs)

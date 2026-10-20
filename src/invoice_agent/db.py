@@ -104,7 +104,7 @@ def current_investigate_entry(trail: list):
     """The most recent 'investigate' entry from get_audit_trail's output,
     but only if nothing invalidated it since. A 'revalidate' entry (a
     manual re-validation after a deterministic code fix -- see
-    decisions_log.md section 6) logged after the investigation means that
+    decisions_log_full.md section 6) logged after the investigation means that
     explanation analyzed a code the invoice no longer carries; showing or
     scoring it as current would check a claim against the wrong problem.
     The audit log itself is never edited (append-only by design) -- this

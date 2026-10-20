@@ -81,7 +81,7 @@ def process_invoice(file_path, validator: Validator, investigator: Optional[Inve
     # to look up in the first place. Without this check, every extraction
     # failure also triggered a full (wasted) investigation call -- found
     # live in section 6's eval run, where it meaningfully inflated API
-    # spend for zero benefit. See docs/decisions_log.md section 6.
+    # spend for zero benefit. See docs/decisions_log_full.md section 6.
     if decision == "EXCEPTION" and validation is not None and investigate_exceptions and investigator is not None:
         outcome = investigator.investigate(extraction.fields or {}, exception_codes)
         investigated = True

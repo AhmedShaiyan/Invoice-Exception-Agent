@@ -80,7 +80,7 @@ Y` mapping can't express "call Z only if Y came back ambiguous" without
 turning into its own decision tree that's just the agent's judgment,
 pre-compiled by hand and therefore unable to adapt to a case the author
 didn't anticipate. The investigation run against that exact scenario (see
-`docs/decisions_log.md` section 4) is the concrete evidence: the agent
+`docs/decisions_log_full.md` section 4) is the concrete evidence: the agent
 called `get_po_history` then `get_goods_receipts`, read that only one GR had
 posted and the remaining balance had never arrived, and explained that --
 two tools, chosen in response to what the first one returned, not a fixed
@@ -124,7 +124,7 @@ dash, someone re-keys with spaces instead of dashes, a system exports with
 slashes instead of dashes) -- which `_norm_loose` catches deterministically,
 with no tunable threshold and no false-positive risk from prefix
 coincidence. A generic fuzzy fallback was tried and removed after it kept
-flagging unrelated invoices; see `docs/decisions_log.md` section 2.
+flagging unrelated invoices; see `docs/decisions_log_full.md` section 2.
 
 ## Sequential, stateful validation (section 1 → section 2)
 

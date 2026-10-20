@@ -30,7 +30,7 @@ ALL_CODES = [
 ]
 
 # Financial-risk severity, used for ap.exceptions.severity and queue
-# triage. A judgment call documented in docs/decisions_log.md section 5 --
+# triage. A judgment call documented in docs/decisions_log_full.md section 5 --
 # roughly: HIGH = money could move wrongly or a real compliance/fraud
 # signal; MEDIUM = needs a human to resolve but isn't itself a sign the
 # invoice is actively wrong; LOW = narrow, usually-cosmetic mismatches.

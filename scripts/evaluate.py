@@ -86,7 +86,7 @@ SUMMARY_JSON = ROOT / "docs" / "eval_summary.json"
 # file hardcoded Sonnet 5 rates for every call, which overstated the real
 # cost of a run by ~36% (reported $6.77, actual $4.99 -- caught by
 # recomputing directly from the audit log after a live run). See
-# docs/decisions_log.md section 6.
+# docs/decisions_log_full.md section 6.
 MODEL_RATES = {
     "claude-haiku-4-5": (Decimal("1.00"), Decimal("5.00")),
     "claude-sonnet-5": (Decimal("3.00"), Decimal("15.00")),

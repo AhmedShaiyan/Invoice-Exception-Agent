@@ -47,7 +47,7 @@ PRICE_PLAUSIBILITY_BAND = D("0.5")     # sanity check only, not the +/-1% tolera
 # prompt -- the normalization belongs here, in the deterministic matching
 # layer, not in the LLM prompt. Found live during section 6's eval run
 # (INV_008_TAN-2607-1826.pdf, a clean invoice spuriously flagged
-# PO_NOT_FOUND) -- see docs/decisions_log.md section 6.
+# PO_NOT_FOUND) -- see docs/decisions_log_full.md section 6.
 _PO_PREFIX_RE = re.compile(r"^\s*p\.?\s*o\.?\s*#?\s*:?\s*", re.IGNORECASE)
 
 
@@ -101,7 +101,7 @@ class Validator:
             flag(C.CREDIT_NOTE_UNSUPPORTED, total=fields["total"])
             return ValidationResult("EXCEPTION", sorted(codes), details)
 
-        # --- vendor resolution (by name -- see docs/decisions_log.md on why
+        # --- vendor resolution (by name -- see docs/decisions_log_full.md on why
         # this is a simplification: no fuzzy vendor-name matching) ---
         lifnr = self.sap.find_vendor_by_name(fields["vendor_name"])
         if lifnr is None:
@@ -215,7 +215,7 @@ class Validator:
         # invoices -- found live in section 6's eval (a sequential-partial
         # overshoot scenario that should have raised QTY_EXCEEDS_GR came
         # back AUTO_APPROVE because the first invoice's quantity was never
-        # actually credited to the ledger). See docs/decisions_log.md
+        # actually credited to the ledger). See docs/decisions_log_full.md
         # section 6.
         if post and C.DUPLICATE_INVOICE not in codes:
             posting_lines = [{"po_number": lr.ekpo["ebeln"], "po_item": lr.ekpo["ebelp"],
@@ -254,7 +254,7 @@ class Validator:
         # "00010" independently), and guessing wrong would credit the
         # wrong PO's quantity ledger, so an ambiguous po_item falls through
         # to the material/description match instead of picking arbitrarily.
-        # Found live in section 6's eval -- see docs/decisions_log.md
+        # Found live in section 6's eval -- see docs/decisions_log_full.md
         # section 6.
         po_number, po_item = _normalize_po(line.get("po_number")), line.get("po_item")
         if po_item:
@@ -278,7 +278,7 @@ class Validator:
         # match to be unambiguous *across distinct POs* before trusting it
         # -- matches within the same PO (e.g. two lines sharing a material
         # code) are unaffected, only a cross-PO tie falls through instead
-        # of guessing. See docs/decisions_log.md section 6.
+        # of guessing. See docs/decisions_log_full.md section 6.
         candidates = [ekpo for ebeln in valid_pos for ekpo in self.sap.po_lines_by_po.get(ebeln, [])]
         material = line.get("material")
         if material:
