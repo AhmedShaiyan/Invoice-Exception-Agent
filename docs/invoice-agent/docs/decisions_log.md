@@ -1093,3 +1093,56 @@ Lakebase and drove it with Playwright through the real password gate --
 confirmed the Dashboard, Exception Queue (71 awaiting review, matching
 local), and Audit Trail all render real data from the new database, not
 just that the tables have rows.
+
+**Streamlit Cloud deploy: two real misconfigurations, plus one false
+alarm from the verification method itself.** Connecting the GitHub repo
+to Streamlit Community Cloud (main file `docs/invoice-agent/app.py`,
+`requirements.txt` resolved correctly since Streamlit Cloud looks next
+to the main file, not the repo root) surfaced:
+
+- The pasted secrets TOML was initially rejected outright ("Invalid
+  format"), most likely from smart-quote substitution or an accidental
+  markdown code-fence line carried over from a copy-paste -- avoided by
+  retyping directly into the secrets editor rather than pasting from a
+  rendered chat view.
+- Once the app booted, the public URL came back `303` to
+  `share.streamlit.io/-/auth/app` -- looked like a private-viewer gate
+  blocking anonymous visitors, but the app's own Sharing setting was
+  already "public and searchable." This was the first false alarm:
+  `curl` can't execute the JS/cookie flow Streamlit Cloud's anonymous-
+  viewer router uses, so it never got past the redirect. A real
+  browser (Playwright) sailed through it fine.
+- `DATABASE_URL` was missing entirely from the saved secrets (dropped
+  somewhere while fixing the TOML error above) -- the Dashboard would
+  have crashed on its first query once login succeeded. Re-added.
+- With all four keys present and correct, the deployed app still
+  rejected the right password on every automated check, while a
+  temporary debug caption (added, pushed, and removed across three
+  small commits -- `os.environ.get("APP_PASSWORD")`'s length matched
+  exactly, 17 characters) proved the secret *was* loaded correctly.
+  Rather than print the actual secret to a public page to debug
+  further, printed a truncated SHA-256 fingerprint instead and compared
+  it against a locally-computed hash of the literal string --
+  deliberately avoided exposing a real credential (even a low-stakes
+  demo password) on a public page just to debug it. Before that
+  comparison even ran, a manual login by the account holder succeeded
+  and showed the real migrated dashboard (217/146/71/0, matching
+  exactly), which reframed the actual problem: every automated
+  Playwright check against the *deployed* app had been submitting the
+  password via the same click-fill-type-Tab pattern that worked
+  reliably against the *local* instance, but the cloud deployment wraps
+  the real app in a nested iframe (`.../~/+/`) with materially higher
+  round-trip latency than localhost, which the automation's fixed wait
+  times weren't generous enough to absorb reliably. Not a secrets bug
+  at all -- a test-timing bug in verifying it. Lesson: a human
+  clicking through once is sometimes a faster, more trustworthy check
+  than fighting a flaky automation harness against infrastructure with
+  different latency characteristics than what the harness was tuned
+  against.
+- Streamlit Cloud's auto-redeploy-on-push also was not instant -- each
+  of the three debug commits took on the order of 5-8 minutes to
+  actually take effect on the public URL, and back-to-back pushes
+  seemed to compound that delay rather than queue cleanly. Worth
+  knowing going into any future redeploy: expect single-digit minutes,
+  not seconds, and don't conclude a push failed just because the public
+  URL hasn't changed after a minute or two.
