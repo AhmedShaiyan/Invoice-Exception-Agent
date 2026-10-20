@@ -1,3 +1,4 @@
+name: invoice-agent   # pinned so moving this file doesn't orphan the existing volume/container
 services:
   db:
     image: postgres:16
