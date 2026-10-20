@@ -65,6 +65,29 @@ def base_invoice(**overrides):
     return fields
 
 
+# ================================================= match_lines (display helper)
+def test_match_lines_resolves_same_po_item_as_validate(validator):
+    """match_lines is used by the Invoice Review page to build a match
+    table -- it must resolve the same PO line validate() itself used, or a
+    reviewer would see a match that disagrees with the actual decision."""
+    fields = base_invoice()
+    result = validator.validate(fields, post=False)
+    [display_match] = validator.match_lines(fields)
+    assert display_match.matched is True
+    assert display_match.ekpo == result.line_results[0].ekpo
+
+
+def test_match_lines_does_not_consume_ledger_quantity(validator):
+    """Read-only by design: calling it must not affect a later validate()
+    call's QTY_EXCEEDS_GR check, unlike validate() itself (post=True)."""
+    fields = base_invoice()
+    before = validator.ledger.remaining_qty("4500012001", "00010")
+    validator.match_lines(fields)
+    validator.match_lines(fields)
+    after = validator.ledger.remaining_qty("4500012001", "00010")
+    assert before == after
+
+
 # ===================================================== PO-number normalization
 @pytest.mark.parametrize("prefix", ["PO ", "PO#", "PO:", "P.O. ", "po "])
 def test_po_prefix_on_header_and_line_is_stripped_before_lookup(validator, prefix):

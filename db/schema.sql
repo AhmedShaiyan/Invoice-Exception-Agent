@@ -107,7 +107,7 @@ CREATE TABLE IF NOT EXISTS ap.invoices (
     gst_amount         NUMERIC(14,2),
     total              NUMERIC(14,2),
     extracted_json     JSONB,                   -- raw LLM extraction
-    decision           TEXT CHECK (decision IN ('AUTO_APPROVE','EXCEPTION','APPROVED','REJECTED')),
+    decision           TEXT CHECK (decision IN ('AUTO_APPROVE','EXCEPTION','APPROVED','REJECTED','HELD')),
     created_at         TIMESTAMPTZ DEFAULT now()
 );
 

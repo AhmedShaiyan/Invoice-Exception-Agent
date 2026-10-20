@@ -44,6 +44,26 @@ SEVERITY = {
     UOM_MISMATCH: "LOW", LINE_NOT_ON_PO: "LOW", GST_RATE_INVALID: "LOW",
 }
 
+PLAIN_LABELS = {
+    PO_NOT_FOUND: "PO number not found",
+    VENDOR_NOT_FOUND: "Vendor not on file",
+    VENDOR_BLOCKED: "Vendor is blocked",
+    PRICE_VARIANCE: "Price doesn't match the PO",
+    PRICE_UNIT_MISMATCH: "Billed at the wrong price unit",
+    QTY_EXCEEDS_GR: "Billed more than received",
+    UOM_MISMATCH: "Unit of measure doesn't match",
+    LINE_NOT_ON_PO: "Line item not on the PO",
+    GST_RATE_INVALID: "GST rate is wrong",
+    GST_REG_MISMATCH: "GST number doesn't match vendor record",
+    TOTAL_MISMATCH: "Total doesn't add up",
+    CURRENCY_MISMATCH: "Currency doesn't match the PO",
+    DUPLICATE_INVOICE: "Already posted (duplicate)",
+    NEAR_DUPLICATE_INVOICE: "Likely duplicate (similar invoice #)",
+    CREDIT_NOTE_UNSUPPORTED: "Credit note needs manual handling",
+    EXTRACTION_FAILED: "Couldn't read the document",
+    LOW_CONFIDENCE_EXTRACTION: "Low-confidence reading of the document",
+}
+
 DESCRIPTIONS = {
     PO_NOT_FOUND: "Invoice references a PO number that doesn't exist in EKKO.",
     VENDOR_NOT_FOUND: "Invoice's claimed vendor doesn't match any vendor in LFA1.",

@@ -64,7 +64,9 @@ def process_invoice(file_path, validator: Validator, investigator: Optional[Inve
     investigated = False
 
     if conn:
-        invoice_id = db.insert_invoice(conn, path.name, extraction.fields, decision=decision)
+        matched_vendor = validation.matched_vendor if validation is not None else None
+        invoice_id = db.insert_invoice(conn, path.name, extraction.fields, decision=decision,
+                                        lifnr=matched_vendor)
         db.log_audit(conn, invoice_id, "agent:extractor", "extract",
                       payload={"status": extraction.status, "confidence": extraction.confidence,
                                "attempts": extraction.attempts, "usage": extraction.usage},

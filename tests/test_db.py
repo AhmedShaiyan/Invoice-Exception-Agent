@@ -68,6 +68,19 @@ def test_insert_invoice_round_trips_fields(conn):
     assert row == ("Test Vendor Pte Ltd", "TST-0001", 109.00, "AUTO_APPROVE")
 
 
+def test_insert_invoice_persists_lifnr(conn):
+    """Regression test: insert_invoice used to silently drop the validator's
+    resolved vendor match (ValidationResult.matched_vendor) -- the lifnr
+    column existed in the schema but nothing ever wrote to it, so every
+    row's lifnr was NULL and any join against sap.lfa1 (e.g. for payment
+    terms) could never match."""
+    invoice_id = db.insert_invoice(conn, _source("lifnr.pdf"), _fields(), decision="AUTO_APPROVE",
+                                    lifnr="100001")
+    with conn.cursor() as cur:
+        cur.execute("SELECT lifnr FROM ap.invoices WHERE id = %s", (invoice_id,))
+        assert cur.fetchone() == ("100001",)
+
+
 def test_insert_invoice_handles_missing_fields_for_failed_extraction(conn):
     """Extraction failures carry no fields dict at all (see pipeline.py) --
     insert_invoice must still succeed with every column NULL, not crash."""

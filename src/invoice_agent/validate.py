@@ -227,6 +227,22 @@ class Validator:
                                  line_results=line_results)
 
     # ----------------------------------------------------------------- #
+    def match_lines(self, fields: dict) -> list:
+        """Resolve each invoice line to its PO line for display (the
+        Invoice Review page's match table) -- reuses the exact same
+        _match_line logic validate() uses, so what a reviewer sees is
+        guaranteed to agree with what actually decided the exception
+        rather than being a second opinion that could drift from it.
+        Read-only: doesn't touch the ledger's invoiced_qty, so it's safe
+        to call on an already-processed invoice without affecting its
+        stored decision or any later invoice's quantity check."""
+        lines = [dict(l, po_number=_normalize_po(l.get("po_number"))) for l in fields.get("lines", [])]
+        referenced_pos = sorted({l["po_number"] for l in lines if l.get("po_number")})
+        if not referenced_pos:
+            referenced_pos = [_normalize_po(p) for p in (fields.get("po_number") or "").split("/") if p]
+        valid_pos = [p for p in referenced_pos if self.sap.po_header.get(p)]
+        return [self._match_line(ln, valid_pos) for ln in lines]
+
     def _match_line(self, line: dict, valid_pos: list) -> LineResult:
         # extract.py's schema has no per-line po_number field -- only
         # ground_truth.json's synthetic test fixtures carry one (for

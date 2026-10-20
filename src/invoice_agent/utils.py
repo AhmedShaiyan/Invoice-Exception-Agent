@@ -6,6 +6,15 @@ import time
 from pathlib import Path
 
 
+def escape_dollars(text: str) -> str:
+    """Streamlit's st.markdown treats a pair of bare $ as inline LaTeX
+    (MathJax), so a plain cost line like "extraction $1.46, investigation
+    $3.50" renders as garbled math instead of text. \\$ is the documented
+    way to print a literal dollar sign. Apply to any markdown string that
+    might contain a dollar amount."""
+    return text.replace("$", r"\$")
+
+
 def atomic_write_json(path, data) -> None:
     """Write JSON so a crash mid-write can never leave a corrupt/partial file.
 

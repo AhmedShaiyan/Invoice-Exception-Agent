@@ -34,17 +34,20 @@ def _money(d):
     return str(d) if d is not None else None
 
 
-def insert_invoice(conn, source_file: str, fields: dict, decision: str) -> int:
+def insert_invoice(conn, source_file: str, fields: dict, decision: str, lifnr: str = None) -> int:
     """fields is an extraction output dict (possibly with some keys missing
-    if extraction failed -- insert what's available, NULL the rest)."""
+    if extraction failed -- insert what's available, NULL the rest). lifnr
+    is the validator's resolved vendor match (ValidationResult.matched_vendor),
+    None when extraction failed or the vendor couldn't be resolved -- joined
+    against sap.lfa1 later (e.g. for payment terms) by callers that need it."""
     fields = fields or {}
     with conn.cursor() as cur:
         cur.execute(
             """INSERT INTO ap.invoices
-               (source_file, vendor_name, vendor_gst_reg_no, invoice_number, invoice_date,
+               (source_file, vendor_name, vendor_gst_reg_no, lifnr, invoice_number, invoice_date,
                 po_number, currency, subtotal, gst_rate, gst_amount, total, extracted_json, decision)
-               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
-            (source_file, fields.get("vendor_name"), fields.get("vendor_gst_reg_no"),
+               VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id""",
+            (source_file, fields.get("vendor_name"), fields.get("vendor_gst_reg_no"), lifnr,
              fields.get("invoice_number"), fields.get("invoice_date") or None,
              fields.get("po_number"), fields.get("currency"), _money(fields.get("subtotal")),
              fields.get("gst_rate"), _money(fields.get("gst_amount")), _money(fields.get("total")),
@@ -89,10 +92,10 @@ def log_audit(conn, invoice_id, actor: str, action: str, payload: dict = None, m
 
 
 def record_human_decision(conn, invoice_id: int, decision: str, reviewer: str, reason: str) -> None:
-    """decision must be 'APPROVED' or 'REJECTED' -- enforced by the schema's
-    CHECK constraint too, this is just a clearer failure point."""
-    if decision not in ("APPROVED", "REJECTED"):
-        raise ValueError(f"decision must be APPROVED or REJECTED, got {decision!r}")
+    """decision must be 'APPROVED', 'REJECTED', or 'HELD' -- enforced by the
+    schema's CHECK constraint too, this is just a clearer failure point."""
+    if decision not in ("APPROVED", "REJECTED", "HELD"):
+        raise ValueError(f"decision must be APPROVED, REJECTED, or HELD, got {decision!r}")
     update_decision(conn, invoice_id, decision)
     log_audit(conn, invoice_id, f"user:{reviewer}", decision.lower(), payload={"reason": reason})
 
@@ -150,6 +153,67 @@ def get_exceptions(conn, invoice_id: int) -> list:
         cur.execute(
             "SELECT id, code, severity, detail, explanation, suggested_action FROM ap.exceptions "
             "WHERE invoice_id = %s ORDER BY severity DESC, code", (invoice_id,))
+        return _rows_as_dicts(cur)
+
+
+def list_open_exceptions(conn) -> list:
+    """One row per invoice still sitting in EXCEPTION (not yet approved,
+    rejected, or held), with the vendor's payment terms (sap.lfa1.zterm)
+    joined in so the caller can compute a due date, and every exception
+    code raised aggregated into one array -- everything the Worklist page
+    needs in a single query rather than N+1 round trips."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT i.id, i.source_file, i.vendor_name, i.lifnr, i.invoice_number,
+                      i.invoice_date, i.total, i.currency, v.zterm,
+                      COALESCE(array_agg(DISTINCT e.code) FILTER (WHERE e.code IS NOT NULL), '{}') AS codes
+               FROM ap.invoices i
+               LEFT JOIN sap.lfa1 v ON i.lifnr = v.lifnr
+               LEFT JOIN ap.exceptions e ON e.invoice_id = i.id
+               WHERE i.decision = 'EXCEPTION'
+               GROUP BY i.id, v.zterm
+               ORDER BY i.id""")
+        return _rows_as_dicts(cur)
+
+
+def vendor_scorecard(conn) -> list:
+    """Vendors ranked by how much exception volume/value they cause --
+    across every invoice ever decided EXCEPTION, not just currently-open
+    ones, since a vendor's track record doesn't reset when a human clears
+    today's queue."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT i.vendor_name, count(*) AS exception_count,
+                      COALESCE(sum(i.total), 0) AS exception_value
+               FROM ap.invoices i
+               WHERE i.decision IN ('EXCEPTION','APPROVED','REJECTED','HELD')
+                 AND EXISTS (SELECT 1 FROM ap.exceptions e WHERE e.invoice_id = i.id)
+               GROUP BY i.vendor_name
+               ORDER BY exception_count DESC, exception_value DESC
+               LIMIT 10""")
+        return _rows_as_dicts(cur)
+
+
+def exceptions_by_code(conn) -> list:
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT code, count(*) AS n FROM ap.exceptions
+               GROUP BY code ORDER BY n DESC""")
+        return _rows_as_dicts(cur)
+
+
+def value_on_hold_by_day(conn) -> list:
+    """Sum of invoice total for currently-open exceptions, grouped by the
+    day they were processed. With only one batch eval run behind this demo
+    (not daily operations), expect this to look like a single spike rather
+    than a smooth trend -- the query is correct either way and will show a
+    real multi-day trend once Upload traffic accumulates across days."""
+    with conn.cursor() as cur:
+        cur.execute(
+            """SELECT created_at::date AS day, COALESCE(sum(total), 0) AS value
+               FROM ap.invoices
+               WHERE decision = 'EXCEPTION'
+               GROUP BY day ORDER BY day""")
         return _rows_as_dicts(cur)
 
 

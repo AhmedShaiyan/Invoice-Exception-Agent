@@ -1146,3 +1146,69 @@ to the main file, not the repo root) surfaced:
   knowing going into any future redeploy: expect single-digit minutes,
   not seconds, and don't conclude a push failed just because the public
   URL hasn't changed after a minute or two.
+
+## Section 10 — Rebuild as a real AP tool (hiring-manager feedback)
+
+A reviewer's feedback (repo structure buries the project, app narrates to
+a developer instead of working like a tool, exception queue isn't a
+worklist, cost section visually broken, password gate adds friction)
+drove a full presentation/workflow rebuild. No new validation/exception
+logic -- every number already existed in `validate.py`'s `ValidationResult`
+and `ap.exceptions.detail`; this is restructuring + one new agent
+capability (drafting vendor emails), not new rules.
+
+**A real, pre-existing bug found while wiring the Worklist's due-date
+calculation**: `ap.invoices.lifnr` has existed in the schema since section
+5, documented as "matched vendor (null if unmatched)" -- but
+`db.insert_invoice`'s own INSERT statement never included it, and nothing
+else in the codebase ever wrote to it either. Every one of the 217 real
+rows from section 6's eval run had `lifnr = NULL`, silently, the whole
+time -- any future join against `sap.lfa1` (exactly what the Worklist's
+due-date-from-payment-terms feature needs) would have matched nothing.
+Fixed by threading `ValidationResult.matched_vendor` through
+`insert_invoice`'s new `lifnr` parameter and `pipeline.py`'s call site,
+then backfilling the 217 already-processed rows (both local Postgres and
+Lakebase) by re-running the exact same `SapData.find_vendor_by_name`
+lookup the validator already used against each row's already-stored
+`vendor_name` -- pure local lookup, zero API cost, same "replay captured
+data for free" pattern used throughout this project. Backfill result: 214
+resolved, 3 unresolved -- exactly the dataset's 3 `unknown_vendor`
+scenario invoices, confirming correctness rather than a partial fix.
+
+**Match table built by reusing `_match_line`, not re-deriving it.** The
+new `Validator.match_lines(fields)` calls the same private `_match_line`
+method `validate()` itself uses, so the PO line shown to a reviewer is
+guaranteed to agree with what actually produced the stored exception --
+not a second opinion that could silently drift from it. Verified
+read-only: `_match_line` only reads `self.sap` (static EKPO data);
+`Ledger.gr_qty` is seeded once from `sap.ekbe`'s CSV in `from_csvs()` and
+never mutated afterward (`record_invoice` only touches `invoiced_qty`),
+so reading it directly for a "goods received" column is safe and correct
+regardless of what order other invoices were processed in -- the one
+genuinely sequence-dependent number (`remaining_qty` = gr_qty minus
+invoiced_qty-so-far) is deliberately *not* recomputed for display; the
+match table instead shows the three independent, always-correct facts
+(PO qty/price, static GR qty, this invoice's own stated qty/price) and
+highlights mismatches using the already-stored, already-decided exception
+codes, not a redundant recomputation.
+
+**Accidentally deleted the untracked `.env` file during the repo move**:
+`git mv` correctly skipped it (it's gitignored, never tracked), but the
+cleanup step right after (`rm -rf docs/invoice-agent` to remove the now-
+empty leftover directory) deleted it along with genuinely-empty leftover
+cache dirs, since I didn't move or copy it out first. Recovered
+immediately from the exact values already visible earlier in this same
+conversation (the live Lakebase connection string, API key, password,
+quota limit) and confirmed byte-for-byte correct by a live Lakebase
+connection test (217 invoices, matching). No real damage, but the lesson
+stands: move an untracked file explicitly, every time, before any bulk
+`rm -rf` near it -- `git mv` silently not touching it is not the same as
+it being safe.
+
+**Docker Compose project name pinned (`name: invoice-agent`) before the
+move**, not after discovering a problem: Compose derives its default
+project name (and therefore volume/container names) from the directory
+containing the compose file. Moving the file from `docs/invoice-agent/`
+to the repo root (`Audit_agent/`) would otherwise have orphaned the
+already-running local Postgres container and its `pgdata` volume the
+first time `docker compose up` ran from the new location.
