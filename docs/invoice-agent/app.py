@@ -37,12 +37,33 @@ auto_approved = by_decision.get("AUTO_APPROVE", 0)
 exceptions = by_decision.get("EXCEPTION", 0)
 approved = by_decision.get("APPROVED", 0)
 rejected = by_decision.get("REJECTED", 0)
+reviewed = approved + rejected
+pending = exceptions - reviewed
+
+st.info(
+    f"These {total} invoices are the labelled evaluation set this project is scored "
+    f"against (not live traffic -- that only grows if someone uses **Upload Invoice** "
+    f"below). **{auto_approved}** passed every check and were auto-approved with no "
+    f"human involved. **{exceptions}** failed at least one check and were routed to a "
+    f"person instead of being guessed at -- of those, **{pending}** are still "
+    f"unreviewed and **{reviewed}** already have a human decision on record.",
+    icon="ℹ️",
+)
 
 col1, col2, col3, col4 = st.columns(4)
 col1.metric("Invoices processed", total)
 col2.metric("Auto-approved", auto_approved, help="Passed three-way match + GST checks with no exceptions.")
 col3.metric("Exceptions", exceptions, help="Routed to human review -- see the Exception Queue page.")
-col4.metric("Reviewed", approved + rejected, help=f"{approved} approved, {rejected} rejected by a human.")
+col4.metric("Reviewed", reviewed, help=f"{approved} approved, {rejected} rejected by a human.")
+
+if pending > 0:
+    st.warning(f"**{pending} invoice(s) are waiting for a decision.**")
+    st.page_link("pages/1_Exception_Queue.py", label="Go to Exception Queue →", icon="📋")
+else:
+    st.success("Every exception has a human decision on record.")
+    st.page_link("pages/2_Audit_Trail.py", label="Browse the audit trail →", icon="🧾")
+
+st.page_link("pages/3_Upload_Invoice.py", label="Try it on your own invoice →", icon="📄")
 
 st.divider()
 
