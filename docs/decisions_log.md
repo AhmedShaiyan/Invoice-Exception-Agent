@@ -1212,3 +1212,84 @@ containing the compose file. Moving the file from `docs/invoice-agent/`
 to the repo root (`Audit_agent/`) would otherwise have orphaned the
 already-running local Postgres container and its `pgdata` volume the
 first time `docker compose up` ran from the new location.
+
+**New pages built to replace the eval-harness-style UI**: `app.py` is now
+a Worklist (KPI row + sortable/filterable table of open exceptions, due
+dates computed from `sap.lfa1.zterm`), `pages/1_Invoice_Review.py`
+replaces the old Exception Queue (original PDF rendered via `pypdfium2`,
+a line-by-line match table, plain-English findings, Approve/Reject/Hold,
+and a new "Draft vendor query" action), `pages/2_Insights.py` and
+`pages/3_Model_Performance.py` are new (manager view vs. engineering
+view, split per the feedback), `pages/4_Audit_Trail.py` and
+`pages/5_Upload_Invoice.py` are reworked copies of the old pages (plain
+language, password gate removed), `pages/6_About.py` is new (one inline
+SVG architecture diagram, three sentences, the limitations list).
+
+**`Validator.match_lines()`** reuses `_match_line` (the exact method
+`validate()` itself calls) read-only, so a reviewer's match table can
+never show a different PO match than what actually produced the stored
+decision. Verified safe to call on an already-processed invoice: `_match_line`
+only reads static `SapData`; `Ledger.gr_qty` is seeded once from
+`sap.ekbe` and never mutated by `record_invoice` (only `invoiced_qty`
+is) -- the one genuinely sequence-dependent number (`remaining_qty`) is
+deliberately not recomputed for display.
+
+**`present.py`** is a new, small, pure-function module (no DB/API calls)
+that turns persisted JSON (`ap.exceptions.detail`, audit-log tool-call
+payloads) into plain sentences for the UI, shared by Invoice Review and
+Audit Trail so the two pages can't describe the same event two different
+ways.
+
+**"Draft vendor query"** (`agent.draft_vendor_query`) is a new, narrow
+agent capability: one tool-less Claude call that drafts a vendor email
+grounded in an *already-completed* investigation's explanation, not a
+second investigation. A human edits and explicitly marks it sent
+(`vendor_query_sent` audit entry) -- the function itself never sends
+anything, consistent with "the system never acts autonomously."
+
+**Real bugs found while building this, each fixed and tested**:
+- `st.dataframe()` silently renders a pandas `Styler` as an empty
+  component -- no exception, nothing in the server log, just a blank
+  area where the match table should be. Found by inspecting the DOM
+  directly after visual inspection showed nothing between two known
+  headings. Fixed by rendering the `Styler`'s own `.to_html()` via
+  `st.markdown(..., unsafe_allow_html=True)` instead.
+- The Worklist's "Days to due" column mixed `int` and the string
+  `"unknown"` (for the 3 invoices with an unresolved vendor, no payment
+  terms to compute from) -- Arrow serialization failed and Streamlit
+  silently auto-coerced the column, logging a warning. Fixed by making
+  the column consistently a string (rows are already sorted in Python,
+  so the column's dtype doesn't affect display order).
+- `db.vendor_scorecard`'s `GROUP BY` included the raw `i.vendor_name`
+  text alongside the intended `lifnr`-based grouping key, silently
+  re-splitting a single real vendor ("Redwood Overseas Equipment Inc")
+  into two scorecard rows whenever the same vendor's name was extracted
+  with different case on different invoices. Found by eyeballing the
+  Insights screenshot during verification, not by the function crashing
+  or an obviously wrong number. Fixed and added a regression test using
+  a fictitious lifnr so it doesn't depend on real data volume staying
+  below the function's own `LIMIT 10`.
+- `scripts/evaluate.py`'s processing-time section: `_mean([])`/`_median([])`
+  return `0.0`, and the real eval run was entirely `--resume`d (every row's
+  `elapsed_seconds` is `None`), so the report displayed "0.00s mean,
+  0.00s median" -- indistinguishable from genuinely fast processing.
+  Fixed to show "no timing data" explicitly when the input list is
+  empty; added `compute_summary()` (a small, separately-written JSON
+  summary, committed to git unlike the large gitignored raw results
+  dump) for the new Model Performance page, plus a cross-check test
+  against `build_report()`'s markdown so the two can't silently diverge.
+
+**Automated verification limitation, not a functionality bug**: the
+Worklist's row-click-to-navigate (`st.dataframe(..., on_select="rerun",
+selection_mode="single-row")`) could not be triggered via Playwright
+despite several attempts (direct click, precise canvas-bounding-box
+click, explicit pointer down/up with delays) -- a debug print of
+`event.selection` confirmed the mechanism itself is correctly wired
+(`rows: []` before, tracked live across reruns) and never changed after
+any synthetic click. This is a known general difficulty automating
+canvas-rendered interactive grids (glide-data-grid, in Streamlit's
+case) with synthetic pointer events, not evidence of a code defect --
+the Invoice Review page's selectbox fallback (used whenever a visitor
+arrives without a pre-selected invoice) was verified working reliably
+throughout. Documented here rather than claimed as verified, since it
+wasn't.

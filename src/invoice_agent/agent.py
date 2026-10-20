@@ -304,6 +304,47 @@ class Investigator:
                                          usage=usage_totals)
 
 
+class VendorQueryDraft(BaseModel):
+    subject: str = Field(description="Email subject line.")
+    body: str = Field(description="Plain-text email body.")
+
+
+DRAFT_SYSTEM_PROMPT = (
+    "You draft brief, professional vendor correspondence for an accounts payable team. "
+    "Only state facts given to you in the invoice fields and findings below -- never invent "
+    "amounts, dates, PO numbers, or any fact not explicitly stated. This is a draft a human "
+    "reviewer will read, edit, and send themselves; you are not sending anything."
+)
+
+
+def draft_vendor_query(invoice_fields: dict, exception_codes: list, explanation: str,
+                        client: anthropic.Anthropic = None) -> dict:
+    """Drafts a vendor-facing email requesting a corrected invoice or
+    credit note. Reuses an investigation's already-grounded explanation
+    rather than calling tools or re-verifying anything itself -- one
+    cheap, tool-less call, not a second investigation. A human edits and
+    marks it sent from the Invoice Review page; this function never sends
+    anything. Returns {"subject", "body", "usage"}."""
+    client = client or anthropic.Anthropic()
+    prompt = (
+        f"Invoice fields:\n{json.dumps(invoice_fields, indent=2)}\n\n"
+        f"Exception code(s): {exception_codes}\n\n"
+        f"Investigation findings (already grounded in verified data):\n{explanation}\n\n"
+        "Draft a brief, professional email to the vendor describing the discrepancy and "
+        "requesting a corrected invoice or credit note."
+    )
+    response = client.messages.parse(
+        model=MODEL, max_tokens=1024, system=DRAFT_SYSTEM_PROMPT,
+        messages=[{"role": "user", "content": prompt}],
+        thinking={"type": "disabled"}, output_format=VendorQueryDraft,
+    )
+    result = response.parsed_output
+    usage = getattr(response, "usage", None)
+    usage_dict = ({"input_tokens": usage.input_tokens, "output_tokens": usage.output_tokens}
+                  if usage is not None else {})
+    return {"subject": result.subject, "body": result.body, "usage": usage_dict}
+
+
 def groundedness_check(explanation: str, tool_calls: list, invoice_fields: dict = None) -> dict:
     r"""Heuristic check for section 6's eval: extract every number-looking
     token in the explanation and confirm it appears somewhere in either the

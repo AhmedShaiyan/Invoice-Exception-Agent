@@ -109,7 +109,9 @@ Each of these invoices has text embedded in the document instructing an automate
 
 ## Processing time and estimated cost
 
-- Extraction + validation only (no exception, 0 invoices): 0.00s mean, 0.00s median
-- Extraction + validation + investigation (0 invoices): 0.00s mean, 0.00s median
+- Extraction + validation only (no exception): no timing data (217 row(s) reused via --resume carry no elapsed time)
+
+- Extraction + validation + investigation: no timing data (217 row(s) reused via --resume carry no elapsed time)
+
 - Estimated API cost: extraction **$1.46**, investigation **$3.50**, total **$4.96** (billed per-call at its actual model's rate -- claude-haiku-4-5 $1.00/$5.00 per M in/out, claude-sonnet-5 $3.00/$15.00 per M in/out; rows reused via --resume have no usage recorded this run and are not re-counted)
 - Estimated average cost per invoice: $0.0228

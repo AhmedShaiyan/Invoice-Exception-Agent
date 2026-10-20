@@ -178,6 +178,34 @@ def test_list_invoices_filters_by_decision(conn):
     assert not any(r["source_file"] == _source("list_a.pdf") for r in exceptions_only)
 
 
+def test_vendor_scorecard_groups_by_resolved_vendor_not_raw_text(conn):
+    """Regression test: a real vendor whose name was extracted with
+    different case on different invoices (e.g. "Redwood Overseas
+    Equipment Inc" vs "REDWOOD OVERSEAS EQUIPMENT INC") used to show up
+    as two separate scorecard rows -- found live while visually checking
+    the Insights page. Both invoices share the same resolved lifnr, so
+    they must combine into one row. Uses a fictitious lifnr (not in
+    sap.lfa1, so the name falls back to the raw text) to avoid colliding
+    with real vendors' real exception counts already in the database --
+    this table isn't swept by the SOURCE_PREFIX teardown's WHERE clause,
+    since vendor_scorecard deliberately has no source_file filter. Also
+    guarantees enough occurrences to rank inside the function's own
+    LIMIT 10, regardless of how much real data happens to be loaded --
+    reads the current top count first rather than hard-coding a number
+    that could go stale."""
+    current_max = max((r["exception_count"] for r in db.vendor_scorecard(conn)), default=0)
+    names = ["Zzz Test Vendor Pte Ltd", "ZZZ TEST VENDOR PTE LTD"]
+    for i in range(current_max + 1):
+        invoice_id = db.insert_invoice(conn, _source(f"vendor_{i}.pdf"),
+                                        _fields(vendor_name=names[i % 2], invoice_number=f"TST-{i:04d}"),
+                                        decision="EXCEPTION", lifnr="999999")
+        db.insert_exceptions(conn, invoice_id, [C.PRICE_VARIANCE])
+    scorecard = db.vendor_scorecard(conn)
+    matches = [r for r in scorecard if "zzz test vendor" in r["vendor_name"].lower()]
+    assert len(matches) == 1, f"expected one combined row, got {matches}"
+    assert matches[0]["exception_count"] == current_max + 1
+
+
 def test_get_invoice_and_get_exceptions_round_trip(conn):
     invoice_id = db.insert_invoice(conn, _source("detail.pdf"), _fields(), decision="EXCEPTION")
     db.insert_exceptions(conn, invoice_id, [C.PRICE_VARIANCE], explanation="price is off",

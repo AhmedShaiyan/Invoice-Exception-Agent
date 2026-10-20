@@ -76,6 +76,7 @@ GROUND_TRUTH = INVOICES_DIR / "ground_truth.json"
 REPORT_MD = ROOT / "docs" / "eval_report.md"
 CHARTS_DIR = ROOT / "docs" / "eval_charts"
 RAW_RESULTS = ROOT / "data" / "eval_results.json"
+SUMMARY_JSON = ROOT / "docs" / "eval_summary.json"
 
 # Per-model API pricing used for the cost estimate below -- intro rate for
 # Sonnet 5 through 2026-08-31 per the claude-api skill's cached model table.
@@ -204,7 +205,7 @@ def run_eval(resume: bool, limit: int, investigate: bool) -> list:
                 trail = db.get_audit_trail(conn, invoice_id)
                 extraction_entry = next((e for e in trail if e["action"] == "extract"), {})
                 exceptions_row = _fetch_exception_codes(conn, invoice_id)
-                investigate_entry = _current_investigate_entry(trail)
+                investigate_entry = db.current_investigate_entry(trail)
                 rows.append(_build_row(entry, extracted_json or {}, decision, exceptions_row,
                                         extraction_entry, investigate_entry, elapsed=None))
                 continue
@@ -220,7 +221,7 @@ def run_eval(resume: bool, limit: int, investigate: bool) -> list:
                 extracted_json = cur.fetchone()[0] or {}
             trail = db.get_audit_trail(conn, result.invoice_id)
             extraction_entry = next((e for e in trail if e["action"] == "extract"), {})
-            investigate_entry = _current_investigate_entry(trail)
+            investigate_entry = db.current_investigate_entry(trail)
 
             rows.append(_build_row(entry, extracted_json, result.decision, result.exception_codes,
                                     extraction_entry, investigate_entry, elapsed))
@@ -234,24 +235,6 @@ def _fetch_exception_codes(conn, invoice_id) -> list:
         cur.execute("SELECT code FROM ap.exceptions WHERE invoice_id = %s", (invoice_id,))
         return sorted(r[0] for r in cur.fetchall())
 
-
-def _current_investigate_entry(trail: list):
-    """The most recent 'investigate' entry, but only if nothing invalidated
-    it since. A 'revalidate' entry (db.py's manual re-validation after a
-    deterministic code fix -- see decisions_log.md section 6) logged after
-    the investigation means that explanation analyzed a code the invoice
-    no longer carries; scoring it for groundedness would check a claim
-    against the wrong problem, not catch a real grounding failure. The
-    audit log itself is never edited (append-only by design) -- this just
-    stops a stale entry from being scored as if it were current."""
-    investigate_entries = [e for e in trail if e["action"] == "investigate"]
-    if not investigate_entries:
-        return None
-    latest_investigate = investigate_entries[-1]
-    revalidate_entries = [e for e in trail if e["action"] == "revalidate"]
-    if revalidate_entries and revalidate_entries[-1]["created_at"] > latest_investigate["created_at"]:
-        return None
-    return latest_investigate
 
 
 def _build_row(entry, extracted_json, decision, exception_codes, extraction_entry,
@@ -439,11 +422,15 @@ def build_report(rows: list) -> str:
                               Decimal("0"))
     total_cost = extraction_cost + investigation_cost
     rate_note = ", ".join(f"{m} ${r[0]}/${r[1]} per M in/out" for m, r in MODEL_RATES.items())
-    lines.append(f"- Extraction + validation only (no exception, {len(plain)} invoices): "
-                 f"{_mean(plain):.2f}s mean, {_median(plain):.2f}s median\n"
-                 f"- Extraction + validation + investigation ({len(with_inv)} invoices): "
-                 f"{_mean(with_inv):.2f}s mean, {_median(with_inv):.2f}s median\n"
-                 f"- Estimated API cost: extraction **${extraction_cost:.2f}**, "
+
+    def _timing_line(label, xs):
+        if not xs:
+            return f"- {label}: no timing data ({len(rows) - len(timed)} row(s) reused via --resume carry no elapsed time)\n"
+        return f"- {label} ({len(xs)} invoices): {_mean(xs):.2f}s mean, {_median(xs):.2f}s median\n"
+
+    lines.append(_timing_line("Extraction + validation only (no exception)", plain))
+    lines.append(_timing_line("Extraction + validation + investigation", with_inv))
+    lines.append(f"- Estimated API cost: extraction **${extraction_cost:.2f}**, "
                  f"investigation **${investigation_cost:.2f}**, total **${total_cost:.2f}** "
                  f"(billed per-call at its actual model's rate -- {rate_note}; "
                  f"rows reused via --resume have no usage recorded this run and are not re-counted)\n"
@@ -455,6 +442,92 @@ def build_report(rows: list) -> str:
         lines.append("![processing time](eval_charts/processing_time.png)\n")
 
     return "\n".join(lines)
+
+
+def compute_summary(rows: list) -> dict:
+    """The same aggregates build_report() formats as markdown, as plain
+    JSON-serializable data -- small and committed to git (unlike
+    data/eval_results.json's full per-invoice dump, which is gitignored),
+    so the deployed app's Model Performance page has real numbers to show
+    without needing the raw eval run artifacts to be present on the
+    server. Pure aggregation over already-decided rows (counting/summing),
+    not a second scoring pass -- can't disagree with build_report() about
+    what the right *decision* was, only (in principle) about display
+    formatting, which test_evaluate.py cross-checks against the markdown."""
+    n = len(rows)
+    by_layout = defaultdict(lambda: [0, 0])
+    for r in rows:
+        by_layout[r["layout"]][0] += r["field_correct"]
+        by_layout[r["layout"]][1] += r["field_total"]
+    accuracy_by_layout = {layout: {"correct": c, "total": t, "accuracy": (c / t if t else 0)}
+                           for layout, (c, t) in sorted(by_layout.items())}
+    overall_c = sum(c for c, _ in by_layout.values())
+    overall_t = sum(t for _, t in by_layout.values())
+
+    cm = defaultdict(int)
+    for r in rows:
+        cm[(r["expected_decision"], r["actual_decision"])] += 1
+    false_approvals = cm[("EXCEPTION", "AUTO_APPROVE")]
+    false_rejections = cm[("AUTO_APPROVE", "EXCEPTION")]
+    n_actual_exception = sum(v for (exp, _), v in cm.items() if exp == "EXCEPTION")
+    n_actual_clean = sum(v for (exp, _), v in cm.items() if exp == "AUTO_APPROVE")
+
+    tp, fp, fn = defaultdict(int), defaultdict(int), defaultdict(int)
+    for r in rows:
+        exp, act = set(r["expected_codes"]), set(r["actual_codes"])
+        for code in exp | act:
+            if code in exp and code in act:
+                tp[code] += 1
+            elif code in act:
+                fp[code] += 1
+            else:
+                fn[code] += 1
+    precision_recall = {}
+    for code in C.ALL_CODES:
+        t_, f_, n_ = tp[code], fp[code], fn[code]
+        if t_ + f_ + n_ == 0:
+            continue
+        precision_recall[code] = {
+            "tp": t_, "fp": f_, "fn": n_,
+            "precision": (t_ / (t_ + f_) if (t_ + f_) else None),
+            "recall": (t_ / (t_ + n_) if (t_ + n_) else None),
+        }
+
+    injection_rows = [r for r in rows if r["injection_attempted"]]
+    injection_results = [{"file": r["file"],
+                           "pass": r["actual_decision"] == r["expected_decision"]
+                                   and r["actual_codes"] == r["expected_codes"]}
+                          for r in injection_rows]
+
+    investigated_rows = [r for r in rows if r["investigated"]]
+    grounded_rows = [r for r in investigated_rows if r.get("grounded")]
+
+    extraction_cost = sum((token_cost(r["extraction_usage"], r.get("extraction_model")) for r in rows),
+                          Decimal("0"))
+    investigation_cost = sum((token_cost(r["investigation_usage"], r.get("investigation_model")) for r in rows),
+                              Decimal("0"))
+    timed = [r for r in rows if r["elapsed_seconds"] is not None]
+    plain = [r["elapsed_seconds"] for r in timed if not r["investigated"]]
+    with_inv = [r["elapsed_seconds"] for r in timed if r["investigated"]]
+
+    return {
+        "n_invoices": n,
+        "accuracy_by_layout": accuracy_by_layout,
+        "accuracy_overall": {"correct": overall_c, "total": overall_t,
+                              "accuracy": (overall_c / overall_t if overall_t else 0)},
+        "false_approvals": false_approvals, "n_actual_exception": n_actual_exception,
+        "false_rejections": false_rejections, "n_actual_clean": n_actual_clean,
+        "precision_recall_by_code": precision_recall,
+        "prompt_injection_results": injection_results,
+        "groundedness": {"grounded": len(grounded_rows), "investigated": len(investigated_rows)},
+        "cost": {"extraction": str(extraction_cost), "investigation": str(investigation_cost),
+                 "total": str(extraction_cost + investigation_cost),
+                 "per_invoice": str((extraction_cost + investigation_cost) / n) if n else "0"},
+        "timing": {
+            "no_investigation": {"n": len(plain), "mean": _mean(plain), "median": _median(plain)} if plain else None,
+            "with_investigation": {"n": len(with_inv), "mean": _mean(with_inv), "median": _median(with_inv)} if with_inv else None,
+        },
+    }
 
 
 def _mean(xs):
@@ -482,7 +555,8 @@ if __name__ == "__main__":
     RAW_RESULTS.write_text(json.dumps(rows, indent=2, default=str))
     report = build_report(rows)
     REPORT_MD.write_text(report)
-    print(f"\nWrote {REPORT_MD} and charts to {CHARTS_DIR}")
+    SUMMARY_JSON.write_text(json.dumps(compute_summary(rows), indent=2, default=str))
+    print(f"\nWrote {REPORT_MD}, {SUMMARY_JSON}, and charts to {CHARTS_DIR}")
     n_false_approvals = sum(1 for r in rows if r["expected_decision"] == "EXCEPTION"
                              and r["actual_decision"] == "AUTO_APPROVE")
     if n_false_approvals:

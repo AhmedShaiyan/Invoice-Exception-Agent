@@ -100,6 +100,27 @@ def record_human_decision(conn, invoice_id: int, decision: str, reviewer: str, r
     log_audit(conn, invoice_id, f"user:{reviewer}", decision.lower(), payload={"reason": reason})
 
 
+def current_investigate_entry(trail: list):
+    """The most recent 'investigate' entry from get_audit_trail's output,
+    but only if nothing invalidated it since. A 'revalidate' entry (a
+    manual re-validation after a deterministic code fix -- see
+    decisions_log.md section 6) logged after the investigation means that
+    explanation analyzed a code the invoice no longer carries; showing or
+    scoring it as current would check a claim against the wrong problem.
+    The audit log itself is never edited (append-only by design) -- this
+    just stops a stale entry from being treated as current. Shared by
+    scripts/evaluate.py's groundedness scoring and the Invoice Review
+    page's "How this was checked" section, so the two can't drift."""
+    investigate_entries = [e for e in trail if e["action"] == "investigate"]
+    if not investigate_entries:
+        return None
+    latest_investigate = investigate_entries[-1]
+    revalidate_entries = [e for e in trail if e["action"] == "revalidate"]
+    if revalidate_entries and revalidate_entries[-1]["created_at"] > latest_investigate["created_at"]:
+        return None
+    return latest_investigate
+
+
 def get_audit_trail(conn, invoice_id: int) -> list:
     with conn.cursor() as cur:
         cur.execute(
@@ -180,15 +201,26 @@ def vendor_scorecard(conn) -> list:
     """Vendors ranked by how much exception volume/value they cause --
     across every invoice ever decided EXCEPTION, not just currently-open
     ones, since a vendor's track record doesn't reset when a human clears
-    today's queue."""
+    today's queue.
+
+    Grouped by lifnr (the resolved vendor), not the raw extracted
+    vendor_name text -- different invoices from the same real vendor can
+    have different case/whitespace in how their name was printed and
+    read (e.g. "Redwood Overseas Equipment Inc" vs "REDWOOD OVERSEAS
+    EQUIPMENT INC"), which split one vendor into multiple scorecard rows
+    when grouped by the raw text. Falls back to vendor_name for the rare
+    unresolved case (VENDOR_NOT_FOUND, no lifnr to group by) -- there's
+    no canonical identity to group those on."""
     with conn.cursor() as cur:
         cur.execute(
-            """SELECT i.vendor_name, count(*) AS exception_count,
+            """SELECT COALESCE(v.name1, MAX(i.vendor_name)) AS vendor_name,
+                      count(*) AS exception_count,
                       COALESCE(sum(i.total), 0) AS exception_value
                FROM ap.invoices i
+               LEFT JOIN sap.lfa1 v ON i.lifnr = v.lifnr
                WHERE i.decision IN ('EXCEPTION','APPROVED','REJECTED','HELD')
                  AND EXISTS (SELECT 1 FROM ap.exceptions e WHERE e.invoice_id = i.id)
-               GROUP BY i.vendor_name
+               GROUP BY COALESCE(i.lifnr, i.vendor_name), v.name1
                ORDER BY exception_count DESC, exception_value DESC
                LIMIT 10""")
         return _rows_as_dicts(cur)

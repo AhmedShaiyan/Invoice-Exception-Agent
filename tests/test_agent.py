@@ -18,7 +18,9 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from invoice_agent.agent import Investigator, InvestigationResult, groundedness_check  # noqa: E402
+from invoice_agent.agent import (  # noqa: E402
+    Investigator, InvestigationResult, VendorQueryDraft, draft_vendor_query, groundedness_check,
+)
 from invoice_agent.ledger import Ledger  # noqa: E402
 from invoice_agent.sap_data import SapData  # noqa: E402
 
@@ -225,3 +227,25 @@ def test_groundedness_check_allows_citing_the_invoice_itself():
     invoice_fields = {"po_number": "4500012001", "lines": [{"po_item": "00010", "quantity": 31}]}
     result = groundedness_check(explanation, tool_calls, invoice_fields)
     assert result["grounded"] is True
+
+
+# ========================================================= draft_vendor_query
+def test_draft_vendor_query_calls_parse_not_create_no_tools():
+    """A cheap, tool-less follow-up -- must not open a tool-use loop like a
+    fresh investigation would."""
+    client = MagicMock()
+    fake_response = SimpleNamespace(
+        parsed_output=VendorQueryDraft(subject="Re: Invoice ABC-123", body="Dear vendor, ..."),
+        usage=SimpleNamespace(input_tokens=100, output_tokens=50),
+    )
+    client.messages.parse = MagicMock(return_value=fake_response)
+
+    result = draft_vendor_query(
+        {"invoice_number": "ABC-123", "vendor_name": "Test Vendor"}, ["QTY_EXCEEDS_GR"],
+        "Invoiced 12 units, but only 7 remain invoiceable.", client=client)
+
+    client.messages.create.assert_not_called()
+    client.messages.parse.assert_called_once()
+    assert result["subject"] == "Re: Invoice ABC-123"
+    assert result["body"] == "Dear vendor, ..."
+    assert result["usage"] == {"input_tokens": 100, "output_tokens": 50}

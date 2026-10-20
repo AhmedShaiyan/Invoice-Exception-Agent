@@ -1,14 +1,14 @@
-"""Streamlit app entry point: Dashboard. Run with `streamlit run app.py`
-from the `invoice-agent/` directory.
+"""Streamlit app entry point: Worklist. Run with `streamlit run app.py`.
 
 This page plus `pages/` are the human-facing side of the architecture
-described in CLAUDE.md: deterministic validation and a bounded,
+described in .claude/CLAUDE.md: deterministic validation and a bounded,
 read-only agent decide and investigate; nothing in this app (or anywhere
-in the codebase) lets the system approve or reject its own work -- that
-button exists only on the Exception Queue page, and it's a human
-clicking it.
+in the codebase) lets the system approve or reject its own work -- those
+actions exist only on the Invoice Review page, and it's a human clicking
+them.
 """
 import sys
+from datetime import date, timedelta
 from pathlib import Path
 
 import streamlit as st
@@ -16,67 +16,96 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT / "src"))
 
+from invoice_agent import codes as C  # noqa: E402
 from invoice_agent import db  # noqa: E402
-from invoice_agent.app_auth import require_auth  # noqa: E402
 
-st.set_page_config(page_title="Invoice Exception Agent", page_icon="📄", layout="wide")
-require_auth()
+st.set_page_config(page_title="AP Exception Worklist", page_icon="📋", layout="wide")
 
-st.title("Invoice Exception Agent")
-st.caption(
-    "Accounts-payable three-way match (invoice vs. PO vs. goods receipt) + Singapore GST checks. "
-    "Deterministic Python decides; Claude only extracts fields and explains exceptions -- "
-    "see CLAUDE.md for the full architecture."
-)
+st.title("AP Exception Worklist")
 
 conn = db.connect()
 stats = db.dashboard_stats(conn)
-by_decision = stats["by_decision"]
 total = stats["total"]
-auto_approved = by_decision.get("AUTO_APPROVE", 0)
-exceptions = by_decision.get("EXCEPTION", 0)
-approved = by_decision.get("APPROVED", 0)
-rejected = by_decision.get("REJECTED", 0)
-reviewed = approved + rejected
-pending = exceptions - reviewed
+auto_approved = stats["by_decision"].get("AUTO_APPROVE", 0)
+straight_through_rate = (auto_approved / total * 100) if total else 0.0
 
-st.info(
-    f"These {total} invoices are the labelled evaluation set this project is scored "
-    f"against (not live traffic -- that only grows if someone uses **Upload Invoice** "
-    f"below). **{auto_approved}** passed every check and were auto-approved with no "
-    f"human involved. **{exceptions}** failed at least one check and were routed to a "
-    f"person instead of being guessed at -- of those, **{pending}** are still "
-    f"unreviewed and **{reviewed}** already have a human decision on record.",
-    icon="ℹ️",
-)
+rows = db.list_open_exceptions(conn)
+conn.close()
+
+today = date.today()
+
+
+def _due_date(row):
+    if not row["zterm"] or not row["invoice_date"]:
+        return None
+    try:
+        days = int(row["zterm"][2:])
+    except ValueError:
+        return None
+    return row["invoice_date"] + timedelta(days=days)
+
+
+for r in rows:
+    r["due_date"] = _due_date(r)
+    r["days_to_due"] = (r["due_date"] - today).days if r["due_date"] else None
+    r["issues"] = ", ".join(C.PLAIN_LABELS.get(code, code) for code in r["codes"])
+
+value_on_hold = sum((r["total"] or 0) for r in rows)
+due_this_week = sum(1 for r in rows if r["days_to_due"] is not None and 0 <= r["days_to_due"] <= 7)
 
 col1, col2, col3, col4 = st.columns(4)
-col1.metric("Invoices processed", total)
-col2.metric("Auto-approved", auto_approved, help="Passed three-way match + GST checks with no exceptions.")
-col3.metric("Exceptions", exceptions, help="Routed to human review -- see the Exception Queue page.")
-col4.metric("Reviewed", reviewed, help=f"{approved} approved, {rejected} rejected by a human.")
-
-if pending > 0:
-    st.warning(f"**{pending} invoice(s) are waiting for a decision.**")
-    st.page_link("pages/1_Exception_Queue.py", label="Go to Exception Queue →", icon="📋")
-else:
-    st.success("Every exception has a human decision on record.")
-    st.page_link("pages/2_Audit_Trail.py", label="Browse the audit trail →", icon="🧾")
-
-st.page_link("pages/3_Upload_Invoice.py", label="Try it on your own invoice →", icon="📄")
+col1.metric("Open exceptions", len(rows))
+col2.metric("Value on hold", f"SGD {value_on_hold:,.2f}")
+col3.metric("Due within 7 days", due_this_week)
+col4.metric("Straight-through rate", f"{straight_through_rate:.1f}%")
 
 st.divider()
 
-eval_report_path = ROOT / "docs" / "eval_report.md"
-if eval_report_path.exists():
-    st.subheader("Evaluation results")
-    st.caption(
-        "Scored against hand-labelled ground truth on the full 217-invoice dataset -- "
-        "see docs/decisions_log.md section 6 for how this number was produced and verified."
-    )
-    with st.expander("Full evaluation report", expanded=False):
-        st.markdown(eval_report_path.read_text())
-else:
-    st.info("No evaluation report found yet -- run `python scripts/evaluate.py`.")
+if not rows:
+    st.success("No open exceptions.")
+    st.stop()
 
-conn.close()
+all_issues = sorted({code for r in rows for code in r["codes"]})
+all_vendors = sorted({r["vendor_name"] for r in rows if r["vendor_name"]})
+
+fcol1, fcol2 = st.columns(2)
+issue_filter = fcol1.multiselect(
+    "Filter by issue", options=all_issues, format_func=lambda c: C.PLAIN_LABELS.get(c, c))
+vendor_filter = fcol2.multiselect("Filter by vendor", options=all_vendors)
+
+filtered = rows
+if issue_filter:
+    filtered = [r for r in filtered if any(c in issue_filter for c in r["codes"])]
+if vendor_filter:
+    filtered = [r for r in filtered if r["vendor_name"] in vendor_filter]
+
+filtered.sort(key=lambda r: (r["days_to_due"] is None, r["days_to_due"] if r["days_to_due"] is not None else 0))
+
+st.caption(f"{len(filtered)} invoice(s)")
+
+table_rows = [{
+    "id": r["id"],
+    "Vendor": r["vendor_name"] or "(unknown)",
+    "Invoice #": r["invoice_number"] or r["source_file"],
+    "Amount": f"{r['currency'] or ''} {r['total']:,.2f}" if r["total"] is not None else "?",
+    "Issue(s)": r["issues"] or "(none)",
+    "Due date": r["due_date"].isoformat() if r["due_date"] else "unknown",
+    # str(), not the bare int: a column mixing int and the "unknown"
+    # string for rows with no resolvable due date broke Arrow
+    # serialization (Streamlit auto-recovered with a type-coercion
+    # warning, but a consistently-typed column is the actual fix). Rows
+    # are already sorted in Python above, so a string column here costs
+    # nothing -- display order doesn't depend on this column's dtype.
+    "Days to due": str(r["days_to_due"]) if r["days_to_due"] is not None else "unknown",
+} for r in filtered]
+
+event = st.dataframe(
+    table_rows, use_container_width=True, hide_index=True,
+    column_order=["Vendor", "Invoice #", "Amount", "Issue(s)", "Due date", "Days to due"],
+    on_select="rerun", selection_mode="single-row",
+)
+
+if event.selection.rows:
+    selected = filtered[event.selection.rows[0]]
+    st.session_state["selected_invoice_id"] = selected["id"]
+    st.switch_page("pages/1_Invoice_Review.py")

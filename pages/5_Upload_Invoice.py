@@ -8,8 +8,7 @@ VENDOR_NOT_FOUND or PO_NOT_FOUND -- that's the system working, not a bug.
 
 Makes real Claude API calls, so this page is rate-limited by a shared
 daily quota (invoice_agent.db.try_consume_daily_quota) across every
-visitor, not a per-session one -- see app_auth.py and
-docs/decisions_log.md section 7.
+visitor, not a per-session one.
 """
 import sys
 import tempfile
@@ -20,17 +19,17 @@ import streamlit as st
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from invoice_agent import codes as C  # noqa: E402
 from invoice_agent import db  # noqa: E402
 from invoice_agent.agent import Investigator  # noqa: E402
-from invoice_agent.app_auth import daily_limit, require_auth  # noqa: E402
 from invoice_agent.idempotency import IdempotencyStore  # noqa: E402
 from invoice_agent.ledger import Ledger  # noqa: E402
 from invoice_agent.pipeline import process_invoice  # noqa: E402
+from invoice_agent.quota import daily_limit  # noqa: E402
 from invoice_agent.sap_data import SapData  # noqa: E402
 from invoice_agent.validate import Validator  # noqa: E402
 
 st.set_page_config(page_title="Upload Invoice", page_icon="📄", layout="wide")
-require_auth()
 
 SAP_DIR = ROOT / "data" / "sap"
 
@@ -45,8 +44,8 @@ st.warning(
     "This demo matches every upload against **mock** SAP data seeded for this project "
     "(18 fictional Singapore vendors, ~400 purchase orders) -- not any real company's "
     "purchasing system. An invoice from a real vendor will correctly come back "
-    "VENDOR_NOT_FOUND or PO_NOT_FOUND; that's the three-way match working as designed, "
-    "not a bug. See scripts/generate_mock_sap.py for the full mock vendor/PO list.",
+    "\"vendor not on file\" or \"PO not found\"; that's the three-way match working as "
+    "designed, not a bug. See scripts/generate_mock_sap.py for the full mock vendor/PO list.",
     icon="⚠️",
 )
 
@@ -90,24 +89,30 @@ if uploaded is not None:
 
             st.divider()
             if result.decision == "AUTO_APPROVE":
-                st.success(f"**AUTO_APPROVE** -- passed every check (invoice #{result.invoice_id}).")
+                st.success("Passed every check -- no human review needed.")
             else:
-                st.error(f"**EXCEPTION** -- {', '.join(result.exception_codes)} (invoice #{result.invoice_id})")
+                issues = ", ".join(C.PLAIN_LABELS.get(c, c) for c in result.exception_codes)
+                st.error(f"Needs review: {issues}")
             if result.extraction_status != "ok":
                 st.caption(f"Extraction status: {result.extraction_status}")
 
             trail = db.get_audit_trail(conn, result.invoice_id)
             investigate = next((e for e in trail if e["action"] == "investigate"), None)
             if investigate:
-                st.subheader("Agent investigation")
-                st.markdown(f"**Explanation:** {investigate['payload'].get('explanation')}")
-                st.markdown(f"**Suggested action:** {investigate['payload'].get('suggested_action')}")
+                st.subheader("Findings")
+                st.markdown(investigate["payload"].get("explanation", ""))
+                st.markdown(f"**Recommended action:** {investigate['payload'].get('suggested_action', '')}")
 
             invoice_row = db.get_invoice(conn, result.invoice_id)
+            extracted = invoice_row.get("extracted_json") or {}
             with st.expander("Extracted fields"):
-                st.json(invoice_row.get("extracted_json") or {})
+                header_fields = {k: v for k, v in extracted.items() if k != "lines"}
+                st.dataframe([{"Field": k, "Value": v} for k, v in header_fields.items()],
+                             use_container_width=True, hide_index=True)
+                if extracted.get("lines"):
+                    st.dataframe(extracted["lines"], use_container_width=True, hide_index=True)
 
-            st.caption("This upload is now in the database and will appear in the Exception Queue "
-                       "and Audit Trail pages like any other invoice.")
+            st.caption("This upload is now on file and will appear in the Worklist and Audit "
+                       "Trail pages like any other invoice.")
 
 conn.close()
