@@ -23,7 +23,13 @@ def require_auth() -> None:
     st.title("Invoice Exception Agent")
     st.caption("Password-protected demo. See the README for access, or run it yourself locally.")
     _dbg = os.environ.get("APP_PASSWORD")
-    st.caption(f"[TEMP DEBUG] APP_PASSWORD set: {bool(_dbg)}, length: {len(_dbg) if _dbg else 0}")
+    if _dbg:
+        import hashlib
+        _h = hashlib.sha256(_dbg.encode()).hexdigest()[:16]
+        _ascii = all(32 <= ord(c) < 127 for c in _dbg)
+        st.caption(f"[TEMP DEBUG] len={len(_dbg)} ascii={_ascii} sha256_16={_h}")
+    else:
+        st.caption("[TEMP DEBUG] APP_PASSWORD not set")
     password = st.text_input("Password", type="password")
     if st.button("Enter"):
         expected = os.environ.get("APP_PASSWORD")
