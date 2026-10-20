@@ -22,6 +22,8 @@ def require_auth() -> None:
         return
     st.title("Invoice Exception Agent")
     st.caption("Password-protected demo. See the README for access, or run it yourself locally.")
+    _dbg = os.environ.get("APP_PASSWORD")
+    st.caption(f"[TEMP DEBUG] APP_PASSWORD set: {bool(_dbg)}, length: {len(_dbg) if _dbg else 0}")
     password = st.text_input("Password", type="password")
     if st.button("Enter"):
         expected = os.environ.get("APP_PASSWORD")
