@@ -4,7 +4,7 @@ AI-assisted accounts-payable exception review — three-way match and
 Singapore GST validation decide deterministically; Claude extracts
 invoice fields and explains exceptions in plain English.
 
-**Live demo:** https://invoice-exception-agent-bhnd3tg9okgvhsj6iwhwkw.streamlit.app/
+**Live demo:** https://invoice-exception-agent.streamlit.app/
 
 ![Invoice Review](docs/screenshots/invoice_review.png)
 
@@ -51,10 +51,11 @@ streamlit run app.py               # http://localhost:8501
 
 ## More detail
 
-- [`docs/design_decisions.md`](docs/design_decisions.md) — why deterministic validation, why one bounded read-only agent, why no agent framework.
-- [`docs/data_sources.md`](docs/data_sources.md) — where every validation rule and SAP field comes from.
-- [`docs/eval_report.md`](docs/eval_report.md) — full evaluation numbers: per-layout accuracy, per-issue precision/recall, prompt-injection resistance, cost and latency.
-- [`docs/decisions_log.md`](docs/decisions_log.md) — the 10 most interview-relevant decisions and bugs found while building this, with a link to the complete unabridged log.
+Full evaluation numbers (per-layout accuracy, per-issue precision/recall,
+prompt-injection resistance, cost and latency) are on the live demo's
+**Model Performance** page. Architecture reasoning, SAP/GST field
+sourcing, and the full decision history are kept as local project docs
+rather than published here.
 
 ## What this doesn't do
 

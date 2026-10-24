@@ -1,6 +1,16 @@
 .env
+.claude/CLAUDE.md
 __pycache__/
 .venv/
 *.pyc
 .pytest_cache/
 data/eval_results.json
+
+# Narrative/internal docs -- kept locally, not pushed to GitHub.
+# docs/eval_summary.json and docs/eval_charts/ are NOT listed here: the
+# live Model Performance page reads them at runtime.
+docs/decisions_log.md
+docs/decisions_log_full.md
+docs/design_decisions.md
+docs/data_sources.md
+docs/eval_report.md
