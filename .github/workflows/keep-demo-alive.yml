@@ -1,0 +1,46 @@
+name: Keep demo alive
+
+# Databricks Lakebase Free Edition fully disables an idle endpoint after
+# ~3 days with no connections (distinct from scale-to-zero, which
+# auto-resumes transparently -- a disabled endpoint needs a real query
+# to wake back up). Streamlit Community Cloud apps also go dormant after
+# a period with no visitors. This workflow pings both daily, well inside
+# the 3-day window, so the public demo link doesn't silently go dead
+# between visits.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # daily, 03:00 UTC
+  workflow_dispatch: {}   # allow a manual run from the Actions tab too
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping Streamlit app
+        run: |
+          code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 30 \
+            https://invoice-exception-agent.streamlit.app/ || echo "000")
+          echo "Streamlit app responded HTTP $code"
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install psycopg
+        run: pip install "psycopg[binary]"
+
+      - name: Ping Lakebase
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          python -c "
+          import os
+          import psycopg
+          conn = psycopg.connect(os.environ['DATABASE_URL'], connect_timeout=20)
+          with conn.cursor() as cur:
+              cur.execute('SELECT 1')
+          conn.close()
+          print('Lakebase ping OK')
+          "
